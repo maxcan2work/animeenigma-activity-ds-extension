@@ -11,6 +11,7 @@ import {
   presenceFromApi,
   resolvePresence,
   unwrapEnvelope,
+  acceptPageActivity,
 } from './lib/activity.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -37,6 +38,9 @@ let rpcConnecting = false
 let pageContext = null
 /** @type {null | object} */
 let apiActivity = null
+
+/** Which extension tab currently owns pageContext (cross-window / incognito safe). */
+let pageLeader = { id: null, focusedAt: 0 }
 
 let lastFingerprint = ''
 let lastDiscordSetAt = 0
@@ -340,6 +344,13 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/activity') {
     try {
       const body = await readJson(req)
+      const verdict = acceptPageActivity(pageLeader, body)
+      if (!verdict.accept) {
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: true, skipped: verdict.reason }))
+        return
+      }
+      pageLeader = verdict.leader
 
       if (body.clear) {
         pageContext = null
@@ -361,6 +372,8 @@ const server = http.createServer(async (req, res) => {
         locale: body.locale || 'en',
         showProfileButton: Boolean(body.showProfileButton),
         profileUrl: body.profileUrl,
+        tabInstanceId: body.tabInstanceId,
+        focusedAt: body.focusedAt,
         source: 'extension',
       }
 
@@ -368,6 +381,7 @@ const server = http.createServer(async (req, res) => {
       // 15m: Chrome heavily throttles background tabs; 90s caused timer resets.
       pageStaleTimer = setTimeout(() => {
         pageContext = null
+        pageLeader = { id: null, focusedAt: 0 }
         scheduleReconcile(50, true)
         console.log('[bridge] page context stale')
       }, 15 * 60_000)

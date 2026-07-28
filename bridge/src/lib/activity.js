@@ -171,6 +171,50 @@ export function parseSseChunk(buffer, onEvent) {
   return rest
 }
 
+/**
+ * Decide whether a page-context POST may replace the current bridge leader.
+ * Used so several browser windows / profiles (normal + incognito) sharing one
+ * local bridge don't flip Discord presence back and forth on heartbeats.
+ *
+ * @param {{ id: string | null, focusedAt: number }} leader
+ * @param {{ clear?: boolean, tabInstanceId?: string, focusedAt?: number }} incoming
+ */
+export function acceptPageActivity(leader, incoming) {
+  const current = {
+    id: leader?.id ? String(leader.id) : null,
+    focusedAt: Number(leader?.focusedAt) || 0,
+  }
+  const id = incoming?.tabInstanceId ? String(incoming.tabInstanceId) : ''
+  const at = Number(incoming?.focusedAt) || 0
+
+  if (incoming?.clear) {
+    if (current.id && id && id !== current.id) {
+      return { accept: false, leader: current, reason: 'not-leader' }
+    }
+    return { accept: true, leader: { id: null, focusedAt: 0 }, reason: 'cleared' }
+  }
+
+  // Same tab always refreshes (heartbeats / navigation).
+  if (current.id && id && id === current.id) {
+    return {
+      accept: true,
+      leader: { id, focusedAt: Math.max(at, current.focusedAt) },
+      reason: 'same-tab',
+    }
+  }
+
+  // Different tab only wins with a newer focus timestamp.
+  if (current.id && id && id !== current.id && at <= current.focusedAt) {
+    return { accept: false, leader: current, reason: 'stale-focus' }
+  }
+
+  return {
+    accept: true,
+    leader: { id: id || current.id, focusedAt: Math.max(at, current.focusedAt) },
+    reason: 'takeover',
+  }
+}
+
 export const ACTIVITY_TYPE = {
   playing: 0,
   listening: 2,

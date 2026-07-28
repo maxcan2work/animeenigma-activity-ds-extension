@@ -4,6 +4,8 @@
   const NAV_DEBOUNCE_MS = 40
   const API_BASE = location.origin
   const SESSION_START_KEY = 'ae-discord-session-start'
+  const TAB_ID_KEY = 'ae-discord-tab-id'
+  const FOCUS_AT_KEY = 'ae-discord-focus-at'
 
   let lastSent = ''
   let lastIdentity = ''
@@ -12,8 +14,49 @@
   let lastPayload = null
   let locale = 'en'
   let showProfileButton = false
+  let focusedAt = readFocusAt()
   /** @type {Map<string, { names: Record<string, string>, raw?: object, fetchedAt: number }>} */
   const animeCache = new Map()
+
+  function tabInstanceId() {
+    try {
+      let id = sessionStorage.getItem(TAB_ID_KEY)
+      if (!id) {
+        id = crypto.randomUUID()
+        sessionStorage.setItem(TAB_ID_KEY, id)
+      }
+      return id
+    } catch {
+      return `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    }
+  }
+
+  function readFocusAt() {
+    try {
+      const n = Number(sessionStorage.getItem(FOCUS_AT_KEY))
+      if (Number.isFinite(n) && n > 0) return n
+    } catch {
+      /* ignore */
+    }
+    return Date.now()
+  }
+
+  function bumpFocus() {
+    focusedAt = Date.now()
+    try {
+      sessionStorage.setItem(FOCUS_AT_KEY, String(focusedAt))
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function withLeaderFields(payload) {
+    return {
+      ...payload,
+      tabInstanceId: tabInstanceId(),
+      focusedAt,
+    }
+  }
 
   async function refreshSettings() {
     try {
@@ -46,11 +89,11 @@
 
   function withButtonFields(payload) {
     const profileUrl = showProfileButton ? resolveOwnProfileUrl() : undefined
-    return {
+    return withLeaderFields({
       ...payload,
       showProfileButton: Boolean(showProfileButton && profileUrl),
       profileUrl,
-    }
+    })
   }
   function readSessionStart() {
     try {
@@ -282,6 +325,11 @@
     }
   }
 
+  /** Only the focused AnimeEnigma tab should drive Discord presence. */
+  function isFocusedTab() {
+    return document.visibilityState === 'visible'
+  }
+
   let stopped = false
   let heartbeatTimer = null
 
@@ -303,10 +351,17 @@
       return
     }
     try {
-      chrome.runtime.sendMessage({ type: 'ae-activity', payload }, () => {
-        const err = chrome.runtime.lastError?.message || ''
-        if (/context invalidated|extension context/i.test(err)) shutdown()
-      })
+      chrome.runtime.sendMessage(
+        {
+          type: 'ae-activity',
+          payload,
+          claim: isFocusedTab(),
+        },
+        () => {
+          const err = chrome.runtime.lastError?.message || ''
+          if (/context invalidated|extension context/i.test(err)) shutdown()
+        },
+      )
     } catch {
       // Thrown synchronously when the extension was reloaded on this tab.
       shutdown()
@@ -314,7 +369,7 @@
   }
 
   function send(payload, { heartbeat = false } = {}) {
-    if (stopped) return
+    if (stopped || !isFocusedTab()) return
 
     const id = activityIdentity(payload)
     const fp = fingerprint(payload)
@@ -341,10 +396,10 @@
   }
 
   function tick(urgent = false) {
-    if (stopped) return
+    if (stopped || !isFocusedTab()) return
     clearTimeout(debounceTimer)
     debounceTimer = setTimeout(() => {
-      if (stopped) return
+      if (stopped || !isFocusedTab()) return
       detect()
         .then((payload) => send(withButtonFields(payload)))
         .catch(() => {})
@@ -361,7 +416,22 @@
     } catch {
       /* ignore */
     }
-    post({ clear: true })
+    // Force claim so the leader can clear; background ignores clears from others.
+    try {
+      chrome.runtime.sendMessage(
+        {
+          type: 'ae-activity',
+          payload: withLeaderFields({ clear: true }),
+          claim: true,
+        },
+        () => {
+          const err = chrome.runtime.lastError?.message || ''
+          if (/context invalidated|extension context/i.test(err)) shutdown()
+        },
+      )
+    } catch {
+      shutdown()
+    }
   }
 
   const wrap = (fnName) => {
@@ -392,15 +462,38 @@
   document.addEventListener('play', () => tick(false), true)
   document.addEventListener('pause', () => tick(false), true)
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') tick(true)
+    if (document.visibilityState === 'visible') {
+      bumpFocus()
+      lastSent = ''
+      tick(true)
+    }
   })
-  window.addEventListener('beforeunload', clearPresence)
+  window.addEventListener('focus', () => {
+    if (isFocusedTab()) {
+      bumpFocus()
+      lastSent = ''
+      tick(true)
+    }
+  })
+  window.addEventListener('beforeunload', () => {
+    // Only the focused tab may clear — a background tab closing must not
+    // wipe the active tab's Discord presence.
+    if (isFocusedTab()) clearPresence()
+  })
 
   heartbeatTimer = setInterval(() => {
-    if (stopped) return
+    if (stopped || !isFocusedTab()) return
     if (lastPayload) send(lastPayload, { heartbeat: true })
     else tick(true)
   }, HEARTBEAT_MS)
+
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type !== 'ae-takeover') return
+    if (!isFocusedTab()) return
+    bumpFocus()
+    lastSent = ''
+    tick(true)
+  })
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'sync') return
@@ -415,5 +508,8 @@
     tick(true)
   })
 
-  refreshSettings().finally(() => tick(true))
+  refreshSettings().finally(() => {
+    bumpFocus()
+    tick(true)
+  })
 })()

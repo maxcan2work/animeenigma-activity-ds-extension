@@ -11,6 +11,7 @@ import {
   presenceFromApi,
   resolvePresence,
   unwrapEnvelope,
+  acceptPageActivity,
   ACTIVITY_TYPE,
   STATUS_DISPLAY_TYPE,
 } from './activity.js'
@@ -191,6 +192,52 @@ describe('buildPresenceButtons', () => {
     })
     assert.equal(buttons.length, 1)
     assert.equal(buttons[0].label, 'Open website')
+  })
+})
+
+describe('acceptPageActivity', () => {
+  it('lets the first tab claim leadership', () => {
+    const verdict = acceptPageActivity({ id: null, focusedAt: 0 }, {
+      tabInstanceId: 'a',
+      focusedAt: 100,
+    })
+    assert.equal(verdict.accept, true)
+    assert.equal(verdict.leader.id, 'a')
+  })
+
+  it('ignores an older focus from another tab', () => {
+    const verdict = acceptPageActivity({ id: 'a', focusedAt: 200 }, {
+      tabInstanceId: 'b',
+      focusedAt: 150,
+    })
+    assert.equal(verdict.accept, false)
+    assert.equal(verdict.reason, 'stale-focus')
+  })
+
+  it('allows a newer focus to take over', () => {
+    const verdict = acceptPageActivity({ id: 'a', focusedAt: 200 }, {
+      tabInstanceId: 'b',
+      focusedAt: 250,
+    })
+    assert.equal(verdict.accept, true)
+    assert.equal(verdict.leader.id, 'b')
+  })
+
+  it('always accepts heartbeats from the same tab', () => {
+    const verdict = acceptPageActivity({ id: 'a', focusedAt: 200 }, {
+      tabInstanceId: 'a',
+      focusedAt: 200,
+    })
+    assert.equal(verdict.accept, true)
+  })
+
+  it('ignores clear from a non-leader tab', () => {
+    const verdict = acceptPageActivity({ id: 'a', focusedAt: 200 }, {
+      clear: true,
+      tabInstanceId: 'b',
+      focusedAt: 300,
+    })
+    assert.equal(verdict.accept, false)
   })
 })
 
