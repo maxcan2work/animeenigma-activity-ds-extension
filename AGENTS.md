@@ -67,6 +67,7 @@ After every non-trivial code change, run a short self-review before finishing:
 - Extension content script: `extension/content.js`
 - Extension SW: `extension/background.js`
 - Manifest MV3: `extension/manifest.json`
+- Brand art: `assets/logo.png`, `assets/discord/logo.png` (upload to Discord Art Assets as `logo`)
 - CI workflow: `.github/workflows/ci.yml`
 
 ## CI / deploy

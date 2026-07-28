@@ -46,6 +46,14 @@ npm start
 
 Leave **Discord Desktop** running.
 
+### Discord Rich Presence image (optional but nice)
+
+1. Open [Discord Developer Portal](https://discord.com/developers/applications) → your app  
+2. **Rich Presence → Art Assets** → upload `assets/discord/logo.png`  
+3. Name the asset exactly `logo` (matches `DISCORD_LARGE_IMAGE_KEY` in `.env`)
+
+Source art lives in `assets/` (`logo.png` full mark, `logo-mark.png` letter-A crop). Extension toolbar icons are under `extension/icons/`.
+
 ### Load the extension (Chrome / Edge / Brave)
 
 1. `chrome://extensions` → Developer mode → **Load unpacked**
