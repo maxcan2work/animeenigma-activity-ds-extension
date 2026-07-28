@@ -2,12 +2,17 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
   animeTitle,
+  buildPresenceButtons,
+  discordActivityType,
+  discordStatusDisplayType,
   formatWatchState,
   isAnimeEnigmaUrl,
   parseSseChunk,
   presenceFromApi,
   resolvePresence,
   unwrapEnvelope,
+  ACTIVITY_TYPE,
+  STATUS_DISPLAY_TYPE,
 } from './activity.js'
 
 describe('unwrapEnvelope', () => {
@@ -89,6 +94,103 @@ describe('parseSseChunk', () => {
     assert.equal(events[0].event, 'activity')
     assert.equal(events[0].data.state, 'idle')
     assert.equal(rest, 'data: {"partial":')
+  })
+})
+
+describe('discordActivityType', () => {
+  it('defaults streaming site activity to Watching (not Playing/gamepad)', () => {
+    assert.equal(discordActivityType({ type: 'watching', details: 'Bocchi' }), ACTIVITY_TYPE.watching)
+    assert.equal(discordActivityType({ type: 'playing', details: 'Browsing catalog' }), ACTIVITY_TYPE.watching)
+  })
+
+  it('maps games to Competing', () => {
+    assert.equal(discordActivityType({ type: 'competing', details: 'Guess the opening' }), ACTIVITY_TYPE.competing)
+    assert.equal(discordActivityType({ type: 'playing', details: 'Game lobby' }), ACTIVITY_TYPE.competing)
+  })
+
+  it('keeps Listening for themes', () => {
+    assert.equal(discordActivityType({ type: 'listening', details: 'Themes' }), ACTIVITY_TYPE.listening)
+  })
+})
+
+describe('discordStatusDisplayType', () => {
+  it('keeps Application name (AnimeEnigma) in Watching/Competing line', () => {
+    assert.equal(
+      discordStatusDisplayType({
+        url: 'https://animeenigma.org/gacha',
+        details: 'В гаче',
+        state: 'Ну ещё один круток…',
+      }),
+      STATUS_DISPLAY_TYPE.name,
+    )
+    assert.equal(
+      discordStatusDisplayType({ source: 'api', details: 'Bocchi', state: 'Episode 1' }),
+      STATUS_DISPLAY_TYPE.name,
+    )
+  })
+})
+
+describe('buildPresenceButtons', () => {
+  it('always includes the site home button', () => {
+    const buttons = buildPresenceButtons({ url: 'https://animeenigma.org/browse' })
+    assert.equal(buttons.length, 1)
+    assert.equal(buttons[0].label, 'Open website')
+    assert.equal(buttons[0].url, 'https://animeenigma.org/')
+  })
+
+  it('adds a second button on anime/watch pages', () => {
+    const buttons = buildPresenceButtons({
+      url: 'https://animeenigma.org/anime/abc-123?episode=3',
+    })
+    assert.equal(buttons.length, 2)
+    assert.equal(buttons[1].label, 'Watch too')
+    assert.equal(buttons[1].url, 'https://animeenigma.org/anime/abc-123')
+  })
+
+  it('localizes button labels', () => {
+    const buttons = buildPresenceButtons({
+      url: 'https://animeenigma.org/anime/abc',
+      locale: 'ru',
+    })
+    assert.equal(buttons[0].label, 'Открыть веб-сайт')
+    assert.equal(buttons[1].label, 'Смотреть тоже')
+  })
+
+  it('adds profile button when enabled (non-anime page)', () => {
+    const buttons = buildPresenceButtons({
+      url: 'https://animeenigma.org/gacha',
+      showProfileButton: true,
+      profileUrl: 'https://animeenigma.org/user/pub-1',
+      locale: 'ru',
+    })
+    assert.equal(buttons.length, 2)
+    assert.equal(buttons[0].label, 'Открыть веб-сайт')
+    assert.equal(buttons[1].label, 'Открыть профиль')
+    assert.equal(buttons[1].url, 'https://animeenigma.org/user/pub-1')
+  })
+
+  it('prefers anime + profile over website when both available', () => {
+    const buttons = buildPresenceButtons({
+      url: 'https://animeenigma.org/anime/abc',
+      showProfileButton: true,
+      profileUrl: 'https://animeenigma.org/user/pub-1',
+      locale: 'en',
+    })
+    assert.equal(buttons.length, 2)
+    assert.equal(buttons[0].label, 'Watch too')
+    assert.equal(buttons[0].url, 'https://animeenigma.org/anime/abc')
+    assert.equal(buttons[1].label, 'Open profile')
+    assert.equal(buttons[1].url, 'https://animeenigma.org/user/pub-1')
+  })
+
+  it('ignores profile button when toggled off', () => {
+    const buttons = buildPresenceButtons({
+      url: 'https://animeenigma.org/browse',
+      showProfileButton: false,
+      profileUrl: 'https://animeenigma.org/user/pub-1',
+    })
+    assert.equal(buttons.length, 1)
+    assert.equal(buttons[0].label, 'Open website')
   })
 })
 
