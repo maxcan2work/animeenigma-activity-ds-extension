@@ -1,0 +1,13 @@
+{
+  "name": "animeenigma-activity-ds-extension",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AnimeEnigma → Discord Rich Presence (extension + local bridge)",
+  "type": "module",
+  "scripts": {
+    "test": "npm test --prefix bridge && node scripts/validate-extension.mjs",
+    "validate:extension": "node scripts/validate-extension.mjs",
+    "package:extension": "node scripts/package-extension.mjs",
+    "build": "npm run validate:extension && npm run package:extension"
+  }
+}
