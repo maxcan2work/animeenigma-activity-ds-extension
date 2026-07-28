@@ -191,10 +191,14 @@
     return cleanTitle(document.title)
   }
 
-  function isVideoPlaying() {
-    return [...document.querySelectorAll('video')].some(
-      (v) => !v.paused && !v.ended && v.readyState > 2,
-    )
+  function episodeTotalFromMeta(meta) {
+    const raw = meta?.raw || meta
+    if (!raw || typeof raw !== 'object') return null
+    for (const key of ['episodes_count', 'episodesCount', 'episodes_aired', 'episodesAired']) {
+      const n = Number(raw[key])
+      if (Number.isFinite(n) && n > 0) return Math.floor(n)
+    }
+    return null
   }
 
   async function detect() {
@@ -208,17 +212,15 @@
       const meta = await fetchAnimeMeta(animeId)
       const title = titleFromMeta(meta) || animeTitleFromDom() || t('anime.fallback')
       const episode = q.get('episode') || q.get('ep')
-      const playing = isVideoPlaying()
-      const stateParts = []
-      if (episode) stateParts.push(t('page.episode', { n: episode }))
-      if (playing) stateParts.push(t('page.playing'))
-      else if (document.querySelector('video')) stateParts.push(t('page.paused'))
-      else stateParts.push(t('page.animePage'))
+      const total = episodeTotalFromMeta(meta)
+      let state = t('page.animePage')
+      if (episode && total) state = t('page.episodeOf', { n: episode, total })
+      else if (episode) state = t('page.episode', { n: episode })
 
       return {
         type: 'watching',
         details: title,
-        state: stateParts.join(' · '),
+        state,
         url,
         largeImageText: title,
         locale,
@@ -332,12 +334,16 @@
 
   let stopped = false
   let heartbeatTimer = null
+  let hrefPollTimer = null
+  let lastSeenHref = location.href
+  let detectGeneration = 0
 
   function shutdown() {
     if (stopped) return
     stopped = true
     clearTimeout(debounceTimer)
     if (heartbeatTimer) clearInterval(heartbeatTimer)
+    if (hrefPollTimer) clearInterval(hrefPollTimer)
     try {
       mo.disconnect()
     } catch {
@@ -398,10 +404,17 @@
   function tick(urgent = false) {
     if (stopped || !isFocusedTab()) return
     clearTimeout(debounceTimer)
+    const generation = ++detectGeneration
     debounceTimer = setTimeout(() => {
       if (stopped || !isFocusedTab()) return
       detect()
-        .then((payload) => send(withButtonFields(payload)))
+        .then((payload) => {
+          // Drop stale async results so a slow meta fetch for ep.2 can't
+          // overwrite a newer ep.17 payload.
+          if (generation !== detectGeneration) return
+          lastSeenHref = location.href
+          send(withButtonFields(payload))
+        })
         .catch(() => {})
     }, urgent ? NAV_DEBOUNCE_MS : DEBOUNCE_MS)
   }
@@ -459,8 +472,6 @@
   }
   observeRoot()
 
-  document.addEventListener('play', () => tick(false), true)
-  document.addEventListener('pause', () => tick(false), true)
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
       bumpFocus()
@@ -486,6 +497,15 @@
     if (lastPayload) send(lastPayload, { heartbeat: true })
     else tick(true)
   }, HEARTBEAT_MS)
+
+  // Vue router may update ?episode= without always going through hooks we see;
+  // poll the focused anime tab so late episode jumps still reach Discord.
+  hrefPollTimer = setInterval(() => {
+    if (stopped || !isFocusedTab()) return
+    if (location.href === lastSeenHref) return
+    lastSeenHref = location.href
+    tick(true)
+  }, 800)
 
   chrome.runtime.onMessage.addListener((message) => {
     if (message?.type !== 'ae-takeover') return

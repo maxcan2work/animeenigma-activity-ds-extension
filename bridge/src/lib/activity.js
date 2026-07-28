@@ -97,22 +97,40 @@ export function localizedAnimeTitle(locale, anime) {
 
 export function formatWatchState(snap, locale = 'en') {
   const lang = normalizeLocale(locale)
-  const parts = []
-  if (snap.episode_number != null) {
-    if (lang === 'ru') parts.push(`Серия ${snap.episode_number}`)
-    else if (lang === 'ja') parts.push(`第${snap.episode_number}話`)
-    else parts.push(`Episode ${snap.episode_number}`)
+  const n = snap?.episode_number
+  const total = resolveEpisodeTotal(snap?.anime || snap)
+
+  if (n != null && total != null) {
+    if (lang === 'ru') return `Серия ${n} из ${total}`
+    if (lang === 'ja') return `第${n}/${total}話`
+    return `Episode ${n} of ${total}`
   }
-  if (snap.position_seconds != null && snap.duration_seconds) {
-    const pos = Math.max(0, Math.floor(snap.position_seconds))
-    const dur = Math.max(1, Math.floor(snap.duration_seconds))
-    const pct = Math.min(99, Math.floor((pos / dur) * 100))
-    parts.push(`${pct}%`)
+  if (n != null) {
+    if (lang === 'ru') return `Серия ${n}`
+    if (lang === 'ja') return `第${n}話`
+    return `Episode ${n}`
   }
-  if (parts.length) return parts.join(' · ')
   if (lang === 'ru') return 'Смотрит'
   if (lang === 'ja') return '視聴中'
   return 'Watching'
+}
+
+/** Prefer announced count, else aired count (ongoing titles). */
+export function resolveEpisodeTotal(animeOrSnap) {
+  if (!animeOrSnap || typeof animeOrSnap !== 'object') return null
+  const candidates = [
+    animeOrSnap.episodes_count,
+    animeOrSnap.episodesCount,
+    animeOrSnap.episodes_aired,
+    animeOrSnap.episodesAired,
+    animeOrSnap.anime?.episodes_count,
+    animeOrSnap.anime?.episodes_aired,
+  ]
+  for (const raw of candidates) {
+    const n = Number(raw)
+    if (Number.isFinite(n) && n > 0) return Math.floor(n)
+  }
+  return null
 }
 
 /** @returns {string | null} canonical https://…/user/{publicId} */
@@ -257,8 +275,22 @@ export function discordStatusDisplayType(_payload) {
   return STATUS_DISPLAY_TYPE.name
 }
 
+export function isAnimePageUrl(url) {
+  if (!url || !isAnimeEnigmaUrl(url)) return false
+  try {
+    return /^\/anime\/[^/]+/i.test(new URL(url).pathname)
+  } catch {
+    return false
+  }
+}
+
 export function resolvePresence(apiActivity, pageContext, apiBase) {
   const locale = pageContext?.locale || 'en'
+  // Focused anime page beats the activity API: episode switches in the player
+  // update the URL immediately, while /activity/stream can lag for a long time.
+  if (pageContext && isAnimePageUrl(pageContext.url)) {
+    return pageContext
+  }
   const fromApi = presenceFromApi(apiActivity, apiBase, locale)
   if (fromApi) return fromApi
   if (pageContext) return pageContext

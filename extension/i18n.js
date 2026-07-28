@@ -42,9 +42,8 @@
       'page.browsingRooms': 'Browsing rooms',
       'page.room': 'Room {id}…',
       'page.animePage': 'Anime page',
-      'page.playing': 'On page · playing',
-      'page.paused': 'On page · paused',
       'page.episode': 'Episode {n}',
+      'page.episodeOf': 'Episode {n} of {total}',
       'page.profileFallback': 'Profile',
       'anime.fallback': 'Anime',
 
@@ -119,9 +118,8 @@
       'page.browsingRooms': 'Выбор комнаты',
       'page.room': 'Комната {id}…',
       'page.animePage': 'Страница аниме',
-      'page.playing': 'На странице · играет',
-      'page.paused': 'На странице · пауза',
       'page.episode': 'Серия {n}',
+      'page.episodeOf': 'Серия {n} из {total}',
       'page.profileFallback': 'Профиль',
       'anime.fallback': 'Аниме',
 
@@ -196,9 +194,8 @@
       'page.browsingRooms': 'ルーム一覧',
       'page.room': 'ルーム {id}…',
       'page.animePage': 'アニメページ',
-      'page.playing': 'ページ上 · 再生中',
-      'page.paused': 'ページ上 · 一時停止',
       'page.episode': '第{n}話',
+      'page.episodeOf': '第{n}/{total}話',
       'page.profileFallback': 'プロフィール',
       'anime.fallback': 'アニメ',
 

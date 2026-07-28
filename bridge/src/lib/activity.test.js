@@ -35,14 +35,27 @@ describe('animeTitle', () => {
 })
 
 describe('formatWatchState', () => {
-  it('includes episode and percent', () => {
+  it('shows episode of total without play/pause or percent', () => {
     assert.equal(
-      formatWatchState({ episode_number: 3, position_seconds: 600, duration_seconds: 1200 }),
-      'Episode 3 · 50%',
+      formatWatchState({
+        episode_number: 3,
+        anime: { episodes_count: 12 },
+        position_seconds: 600,
+        duration_seconds: 1200,
+      }),
+      'Episode 3 of 12',
+    )
+    assert.equal(
+      formatWatchState(
+        { episode_number: 3, anime: { episodes_count: 12 } },
+        'ru',
+      ),
+      'Серия 3 из 12',
     )
   })
 
-  it('falls back to Watching', () => {
+  it('falls back to episode-only or Watching', () => {
+    assert.equal(formatWatchState({ episode_number: 2 }), 'Episode 2')
     assert.equal(formatWatchState({}), 'Watching')
   })
 })
@@ -57,22 +70,38 @@ describe('presenceFromApi', () => {
       state: 'watching',
       is_live: true,
       episode_number: 2,
-      anime: { id: 'abc', name: 'Bocchi' },
+      anime: { id: 'abc', name: 'Bocchi', episodes_count: 12 },
       updated_at: '2026-01-01T00:00:00.000Z',
     })
     assert.equal(presence.type, 'watching')
     assert.equal(presence.details, 'Bocchi')
-    assert.equal(presence.state, 'Episode 2')
+    assert.equal(presence.state, 'Episode 2 of 12')
     assert.equal(presence.url, 'https://animeenigma.org/anime/abc')
     assert.equal(presence.source, 'api')
   })
 })
 
 describe('resolvePresence', () => {
-  it('prefers API watching over page context', () => {
+  it('prefers the focused anime page over lagging API watching', () => {
+    const page = {
+      type: 'watching',
+      details: 'Bocchi',
+      state: 'Серия 17 из 12',
+      url: 'https://animeenigma.org/anime/1?episode=17',
+      source: 'extension',
+    }
+    const resolved = resolvePresence(
+      { state: 'watching', is_live: true, anime: { id: '1', name: 'Bocchi' }, episode_number: 2 },
+      page,
+    )
+    assert.equal(resolved, page)
+    assert.equal(resolved.state, 'Серия 17 из 12')
+  })
+
+  it('prefers API watching when the tab is not on an anime page', () => {
     const resolved = resolvePresence(
       { state: 'watching', is_live: true, anime: { id: '1', name: 'API' }, episode_number: 1 },
-      { type: 'playing', details: 'Browsing', source: 'extension' },
+      { type: 'watching', details: 'Browsing', url: 'https://animeenigma.org/browse', source: 'extension' },
     )
     assert.equal(resolved.source, 'api')
     assert.equal(resolved.details, 'API')
