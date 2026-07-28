@@ -17,6 +17,7 @@
 **On this page**
 
 - [Install](#install)
+- [Why not the Chrome Web Store?](#why-not-the-chrome-web-store)
 - [Features](#features)
 - [Why a local bridge?](#why-a-local-bridge)
 - [Quick start](#quick-start)
@@ -43,6 +44,12 @@
 3. Configure and start the bridge as in [Quick start](#quick-start)
 
 > The extension alone is not enough — Discord Rich Presence needs the local bridge next to Discord Desktop.
+
+### Why not the Chrome Web Store?
+
+We’d love a one-click **Add to Chrome** button. Publishing there means a paid developer account, review queues, and ongoing store overhead — and we’re not sure this side project needs that bill yet.
+
+So for now: GitHub Releases + Developer mode. If the project grows and the $5 (plus the paperwork) clearly pays for itself, Store listing is an easy next step.
 
 ---
 
