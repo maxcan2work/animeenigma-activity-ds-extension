@@ -1,0 +1,23 @@
+{
+  "name": "animeenigma-presence",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AnimeEnigma Presence — tray companion (embedded Discord bridge)",
+  "author": "AnimeEnigma",
+  "type": "module",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "bake:client-id": "node scripts/bake-client-id.mjs",
+    "pack:mac": "electron-builder --mac zip --config electron-builder.yml",
+    "pack:win": "electron-builder --win portable --config electron-builder.yml"
+  },
+  "dependencies": {
+    "animeenigma-discord-bridge": "file:../bridge"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  }
+}

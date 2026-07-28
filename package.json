@@ -8,6 +8,9 @@
     "test": "npm test --prefix bridge && node scripts/validate-extension.mjs",
     "validate:extension": "node scripts/validate-extension.mjs",
     "package:extension": "node scripts/package-extension.mjs",
-    "build": "npm run validate:extension && npm run package:extension"
+    "build": "npm run validate:extension && npm run package:extension",
+    "companion:dev": "npm start --prefix companion",
+    "pack:mac": "npm run pack:mac --prefix companion",
+    "pack:win": "npm run pack:win --prefix companion"
   }
 }

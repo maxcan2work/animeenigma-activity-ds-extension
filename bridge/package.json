@@ -4,9 +4,14 @@
   "private": true,
   "description": "Local bridge: Chrome extension → Discord Rich Presence",
   "type": "module",
+  "main": "./src/server.js",
+  "exports": {
+    ".": "./src/server.js",
+    "./cli": "./src/cli.js"
+  },
   "scripts": {
     "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
+    "dev": "node --watch src/cli.js",
     "test": "node --test src/lib/*.test.js"
   },
   "dependencies": {

@@ -21,6 +21,7 @@
 - [Features](#features)
 - [Why a local bridge?](#why-a-local-bridge)
 - [Quick start](#quick-start)
+- [Companion app](#companion-app)
 - [Environment](#environment)
 - [Requirements](#requirements)
 - [Develop / package](#develop--package)
@@ -33,19 +34,23 @@
 ### From a GitHub Release
 
 1. Open [Releases](https://github.com/maxcan2work/animeenigma-activity-ds-extension/releases)
-2. Under **Assets**, download **`animeenigma-discord-presence-v*.zip`**  
-   (not “Source code (zip)” — that archive is the whole repo and has no `manifest.json` at the root)
-3. Unzip it — you should get a folder `animeenigma-discord-presence/` that contains `manifest.json`
-4. Chrome → `chrome://extensions` → enable **Developer mode** → **Load unpacked** → select that **`animeenigma-discord-presence`** folder (the one with `manifest.json` inside)
-5. Keep reading [Quick start](#quick-start) to run the local bridge (required for Discord status)
+2. Under **Assets**, download:
+   - **`animeenigma-discord-presence-v*.zip`** — Chrome extension  
+     (not “Source code (zip)” — that archive is the whole repo and has no `manifest.json` at the root)
+   - **Companion** for your OS — `AnimeEnigma Presence-…-mac-*.zip` or `…-win-*.exe`
+3. Unzip the extension → folder `animeenigma-discord-presence/` with `manifest.json` inside
+4. Chrome → `chrome://extensions` → enable **Developer mode** → **Load unpacked** → select that folder
+5. Run the companion (unzip the `.app` on Mac, or run the `.exe` on Windows). Keep **Discord Desktop** open.
+
+> First Mac launch may need **Right-click → Open**. Windows may show SmartScreen — **More info → Run anyway**.
 
 ### From source
 
 1. Clone this repo
 2. Load the **`extension/`** folder (**Load unpacked**) — not the repo root
-3. Configure and start the bridge as in [Quick start](#quick-start)
+3. Run the companion app or the Node bridge (below)
 
-> The extension alone is not enough — Discord Rich Presence needs the local bridge next to Discord Desktop.
+> The extension alone is not enough — Discord Rich Presence needs a local companion next to Discord Desktop.
 
 ### Why not the Chrome Web Store?
 
@@ -91,12 +96,12 @@ Discord Rich Presence is **not** something a Chrome extension can set by itself.
 | Piece | Runs where | Job |
 |---|---|---|
 | **Extension** | Browser | Sees which AnimeEnigma page you’re on |
-| **Bridge** | Your PC (`127.0.0.1`) | Talks to **Discord Desktop** via IPC and sets the status |
+| **Companion / bridge** | Your PC (`127.0.0.1`) | Talks to **Discord Desktop** via IPC and sets the status |
 | **Discord Desktop** | Your PC | Shows *Watching / Competing* on your profile |
 
 ```text
-  animeenigma.org tab  ──HTTP──►  local bridge :3847  ──IPC──►  Discord Desktop
-       (extension)                   (Node app)                    (Rich Presence)
+  animeenigma.org tab  ──HTTP──►  companion / bridge :3847  ──IPC──►  Discord Desktop
+       (extension)              (tray .app or Node)                 (Rich Presence)
 ```
 
 Chrome cannot open Discord’s desktop IPC socket. The small companion on localhost exists because of that limitation — not because we enjoy ports.
@@ -106,10 +111,54 @@ Chrome cannot open Discord’s desktop IPC socket. The small companion on localh
 - Default address: `http://127.0.0.1:3847`
 - Bound to **localhost only** (not exposed to the internet)
 - The extension talks to that URL; Discord never needs the port
-- Change it only if something else already uses `3847`: set `BRIDGE_PORT` in `.env`, restart the bridge, then open the extension popup → **Advanced** → paste the new address
+- Change it only if something else already uses `3847`: set `port` in the companion `config.json` (or `BRIDGE_PORT` for the Node bridge), restart, then open the extension popup → **Advanced** → paste the new address
 
 Most people never open Advanced.
 
+---
+
+## Companion app
+
+Normal install path: extension + tray companion from the [Release](https://github.com/maxcan2work/animeenigma-activity-ds-extension/releases). No `npm` for day-to-day use.
+
+| OS | Download | Run |
+|---|---|---|
+| macOS | `AnimeEnigma Presence-…-mac-arm64.zip` or `…-mac-x64.zip` | Unzip → open **AnimeEnigma Presence.app** (menu bar) |
+| Windows | `AnimeEnigma Presence-…-win-x64.exe` | Double-click (system tray) |
+
+Keep **Discord Desktop** open while you browse AnimeEnigma. Tray status: **Connected**, **Discord not ready**, or **Error**.
+
+Release builds bake in the Discord Application ID — end users do **not** create their own Discord app.
+
+### Config (optional)
+
+On first launch the app seeds `config.json` under its user data folder (menu → **Open config folder**).
+
+| Field | Default | Notes |
+|---|---|---|
+| `discordClientId` | *(baked in release builds)* | Only needed when building from source without baking |
+| `port` | `3847` | Change only if the port is taken |
+| `apiKey` | *(empty)* | Optional AnimeEnigma `ak_…` (per user) |
+| `largeImageKey` | `logo` | Rich Presence art asset name |
+| `apiBase` | `https://animeenigma.org` | |
+
+Precedence: environment variables → `userData/config.json` → shipped `config.example.json`.
+
+### Build from source
+
+```bash
+cd companion
+npm install
+export DISCORD_CLIENT_ID=...   # required for a usable build
+npm run bake:client-id
+npm run pack:mac               # → dist/*-mac-*.zip
+# on Windows:
+npm run pack:win               # → dist/*-win-*.exe
+```
+
+Developers who prefer a terminal can still use `cd bridge && npm start` instead of the companion app.
+
+CI on `main` packs both platforms and attaches them to the GitHub Release (needs repo secret `DISCORD_CLIENT_ID`).
 ---
 
 ## Quick start
@@ -122,7 +171,11 @@ Most people never open Advanced.
 
 No bot token. No user token. No OAuth secret.
 
-### 2. Configure and run the bridge
+### 2. Run the companion (or Node bridge)
+
+**Preferred:** download **AnimeEnigma Presence** from [Releases](https://github.com/maxcan2work/animeenigma-activity-ds-extension/releases) and open it (Client ID is already baked in).
+
+**Alternative (developers):**
 
 ```bash
 git clone https://github.com/maxcan2work/animeenigma-activity-ds-extension.git
@@ -135,14 +188,14 @@ npm install
 npm start
 ```
 
-Keep **Discord Desktop** open while the bridge runs.
+Keep **Discord Desktop** open while the companion/bridge runs.
 
 <details>
 <summary><strong>Optional: AnimeEnigma API key</strong></summary>
 
 <br>
 
-In your site profile, create a personal API key (`ak_…`) and set `ANIMEENIGMA_API_KEY` in `.env`.
+In your site profile, create a personal API key (`ak_…`) and set it in companion `config.json` (`apiKey`) or as `ANIMEENIGMA_API_KEY` in `.env` for the Node bridge.
 
 Used for:
 
@@ -180,7 +233,7 @@ Copy from [`.env.example`](.env.example). **Never commit `.env`.**
 ## Requirements
 
 - Discord **Desktop** (browser-only Discord cannot host Rich Presence IPC)
-- Node.js **18+** for the bridge
+- **AnimeEnigma Presence** companion (macOS `.app`) **or** Node.js **18+** for `bridge/`
 - A Chromium browser (Chrome / Edge / Brave / …) for the extension
 
 ---
@@ -190,9 +243,14 @@ Copy from [`.env.example`](.env.example). **Never commit `.env`.**
 ```bash
 npm test                          # bridge unit tests + extension validate
 npm run build                     # → dist/animeenigma-discord-presence.zip
+npm run companion:dev             # Electron tray app (embeds the bridge)
+npm run pack:mac                  # → companion/dist/*-mac-*.zip
+npm run pack:win                  # → companion/dist/*-win-*.exe (run on Windows)
 ```
 
-CI on `main`: test → zip → [GitHub Release](https://github.com/maxcan2work/animeenigma-activity-ds-extension/releases).
+CI on `main`: test → extension zip + companion (mac + win) → [GitHub Release](https://github.com/maxcan2work/animeenigma-activity-ds-extension/releases) with all assets.
+
+Repo secret required for companion packs: **`DISCORD_CLIENT_ID`** (Developer Portal → Application ID). Do **not** put `ANIMEENIGMA_API_KEY` in CI — that stays optional and per-user.
 
 The bridge is **not** hosted in the cloud — it has to sit next to Discord on the user’s machine.
 
@@ -241,11 +299,11 @@ Presence follows the **last focused** AnimeEnigma tab. Background tabs don’t o
 </details>
 
 <details>
-<summary><strong>Will there be a one-click companion app?</strong></summary>
+<summary><strong>Do I still need Node / npm?</strong></summary>
 
 <br>
 
-That’s the plan — package the bridge so end users don’t need `npm start`. Until then, the Node bridge is the supported companion.
+Not for normal use — install the extension and open **AnimeEnigma Presence**. Developers can still run `cd bridge && npm start` if they prefer a terminal.
 
 </details>
 

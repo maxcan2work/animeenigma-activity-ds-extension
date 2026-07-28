@@ -9,7 +9,8 @@ Chrome extension + local Node bridge that shows AnimeEnigma activity as Discord 
 | Piece | Path | Role |
 |---|---|---|
 | Extension | `extension/` | Detects page context on animeenigma.org, POSTs to bridge |
-| Bridge | `bridge/` | Discord RPC + AnimeEnigma activity API (SSE/poll) |
+| Bridge | `bridge/` | Discord RPC + AnimeEnigma activity API (SSE/poll); library: `startBridge` / `stopBridge` |
+| Companion | `companion/` | Electron tray app embedding the bridge (macOS `.app`) |
 | Secrets template | `.env.example` | Copy to `.env` locally — **never commit `.env`** |
 
 Architecture constraint: Discord Rich Presence needs a local process next to Discord Desktop. A Chrome extension alone cannot set profile status.
@@ -24,9 +25,11 @@ Architecture constraint: Discord Rich Presence needs a local process next to Dis
 ## Runtime
 
 - Discord **Desktop** must be running (not web-only).
-- Bridge: `cd bridge && npm install && npm start` → `http://127.0.0.1:3847`
+- Companion (preferred): release `.app` / `.exe`, or `cd companion && npm install && npm start`
+- Bridge CLI: `cd bridge && npm install && npm start` → same HTTP API
 - Extension: Chrome → Load unpacked → `extension/`
 - Health: `GET http://127.0.0.1:3847/health` → expect `"discord": true`
+- CI companion packs need GitHub secret **`DISCORD_CLIENT_ID`** (not the AnimeEnigma API key).
 
 Presence priority:
 
@@ -63,12 +66,15 @@ After every non-trivial code change, run a short self-review before finishing:
 - Keep the bridge bound to `127.0.0.1` only.
 - Prefer small, focused diffs.
 - README is for humans; keep AGENTS.md actionable for agents.
-- Future product direction: package the bridge as a click-to-run companion (no `npm start` for end users). Do not pretend a pure-extension Rich Presence is possible.
+- Future product direction: companion tray app packages the bridge (no `npm start` for end users). Do not pretend a pure-extension Rich Presence is possible.
 
 ## Useful paths
 
-- Bridge entry: `bridge/src/index.js`
+- Bridge library: `bridge/src/server.js` (`startBridge` / `stopBridge`)
+- Bridge CLI: `bridge/src/cli.js` (also `bridge/src/index.js`)
 - Bridge helpers (tested): `bridge/src/lib/activity.js`
+- Companion Electron main: `companion/src/main.js`
+- Companion config: `companion/src/config.js`, `companion/config.example.json`
 - Extension content script: `extension/content.js`
 - Extension SW: `extension/background.js`
 - Manifest MV3: `extension/manifest.json`
@@ -78,7 +84,8 @@ After every non-trivial code change, run a short self-review before finishing:
 ## CI / deploy
 
 - CI runs on GitHub Actions (cloud) for `main` PRs/pushes — no load on the owner’s laptop.
-- Jobs: test → build zip → (push to `main`) GitHub Release with the extension zip attached (`v1.0.<run_number>`).
+- Jobs: test → build extension zip → (push to `main`) pack companion mac+win → GitHub Release with extension zip + companion assets (`v1.0.<run_number>`).
+- Companion bake uses secret `DISCORD_CLIENT_ID` only. Never store `ANIMEENIGMA_API_KEY` in Actions secrets for shipping builds.
 - Do **not** wire Chrome Web Store publishing unless the owner explicitly asks later (paid developer account).
 - **Do not** try to host the Discord RPC bridge in the cloud for end-user Rich Presence; it must be local.
 - Releases use the default `GITHUB_TOKEN` — no extra secrets required for zip distribution.

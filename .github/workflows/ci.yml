@@ -69,44 +69,132 @@ jobs:
           path: dist/animeenigma-discord-presence.zip
           if-no-files-found: error
 
+  companion:
+    name: Build companion (${{ matrix.label }})
+    needs: [test, build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            label: mac
+            pack: pack:mac
+            artifact: companion-mac
+          - os: windows-latest
+            label: win
+            pack: pack:win
+            artifact: companion-win
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            bridge/package-lock.json
+            companion/package-lock.json
+
+      - name: Install bridge deps
+        run: npm ci
+        working-directory: bridge
+
+      - name: Install companion deps
+        run: npm ci
+        working-directory: companion
+
+      - name: Sync companion version
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        shell: bash
+        run: |
+          node -e "
+            const fs = require('fs');
+            const p = 'companion/package.json';
+            const pkg = JSON.parse(fs.readFileSync(p, 'utf8'));
+            pkg.version = process.env.VERSION;
+            fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + '\n');
+            console.log('companion version', pkg.version);
+          "
+
+      - name: Bake Discord Client ID
+        env:
+          DISCORD_CLIENT_ID: ${{ secrets.DISCORD_CLIENT_ID }}
+        shell: bash
+        run: node companion/scripts/bake-client-id.mjs
+
+      - name: Pack companion
+        working-directory: companion
+        run: npm run ${{ matrix.pack }}
+
+      - name: Upload companion artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            companion/dist/*.zip
+            companion/dist/*.exe
+          if-no-files-found: error
+
   release:
     name: GitHub Release
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, companion]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: animeenigma-discord-presence
-          path: dist
+          path: artifacts
 
-      - name: Rename zip with version
+      - name: Collect release assets
         env:
           VERSION: ${{ needs.build.outputs.version }}
         run: |
-          mv dist/animeenigma-discord-presence.zip \
+          mkdir -p dist
+          mv artifacts/animeenigma-discord-presence/animeenigma-discord-presence.zip \
             "dist/animeenigma-discord-presence-v${VERSION}.zip"
+
+          # Flatten companion builds (mac zips + win exe)
+          find artifacts/companion-mac artifacts/companion-win -type f \( -name '*.zip' -o -name '*.exe' \) \
+            -exec cp {} dist/ \;
+
           ls -la dist/
+
+          # Require at least one mac zip and one win exe
+          test -n "$(find dist -maxdepth 1 \( -name '*mac*.zip' -o -name '*darwin*.zip' \) | head -1)"
+          test -n "$(find dist -maxdepth 1 -name '*.exe' | head -1)"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.build.outputs.version }}
-          name: Extension v${{ needs.build.outputs.version }}
+          name: v${{ needs.build.outputs.version }}
           body: |
-            Chrome extension build from `main` (`${{ github.sha }}`).
+            Build from `main` (`${{ github.sha }}`).
 
-            ### Install
-            1. Download **`animeenigma-discord-presence-v${{ needs.build.outputs.version }}.zip`** from **Assets** below  
-               (do **not** use “Source code (zip)” — that is the full repo)
-            2. Unzip → open the folder **`animeenigma-discord-presence`**
-            3. Confirm you see `manifest.json` inside that folder
-            4. Chrome → `chrome://extensions` → Developer mode → **Load unpacked** → select **`animeenigma-discord-presence`**
+            ### 1. Chrome extension
+            1. Download **`animeenigma-discord-presence-v${{ needs.build.outputs.version }}.zip`**
+               (not “Source code (zip)”)
+            2. Unzip → folder **`animeenigma-discord-presence`** with `manifest.json` inside
+            3. Chrome → `chrome://extensions` → Developer mode → **Load unpacked** → select that folder
 
-            The local Discord bridge is still required for Rich Presence (see README).
-          files: dist/animeenigma-discord-presence-v${{ needs.build.outputs.version }}.zip
+            ### 2. Companion (Discord bridge)
+            Keep **Discord Desktop** open, then run the companion for your OS:
+
+            | OS | Asset |
+            |---|---|
+            | macOS (Apple Silicon) | `AnimeEnigma Presence-…-mac-arm64.zip` → unzip → open **AnimeEnigma Presence.app** |
+            | macOS (Intel) | `AnimeEnigma Presence-…-mac-x64.zip` → same |
+            | Windows | `AnimeEnigma Presence-…-win-x64.exe` → run |
+
+            First launch on macOS may need **Right-click → Open** (unsigned build). Windows may show a SmartScreen prompt — choose **More info → Run anyway**.
+
+            No `npm`, no `.env` for normal use. Optional AnimeEnigma API key can be set later in the companion config folder.
+          files: dist/*
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

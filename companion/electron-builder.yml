@@ -1,0 +1,34 @@
+appId: org.animeenigma.presence
+productName: AnimeEnigma Presence
+directories:
+  output: dist
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+# discord-rpc pulls optional register-scheme; rebuilding it needs distutils (gone on modern Python).
+# Rich Presence IPC does not require that native addon.
+npmRebuild: false
+files:
+  - src/**/*
+  - config.example.json
+  - assets/**/*
+  - package.json
+extraResources:
+  - from: config.example.json
+    to: config.example.json
+mac:
+  category: public.app-category.entertainment
+  target:
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  identity: null
+  icon: assets/icon.png
+win:
+  target:
+    - target: portable
+      arch:
+        - x64
+  icon: assets/icon.png
+  # Unsigned portable .exe — users may see a SmartScreen warning on first run.
+portable:
+  artifactName: ${productName}-${version}-win-${arch}.${ext}
