@@ -99,9 +99,11 @@ jobs:
             Chrome extension build from `main` (`${{ github.sha }}`).
 
             ### Install
-            1. Download `animeenigma-discord-presence-v${{ needs.build.outputs.version }}.zip`
-            2. Unzip it
-            3. Chrome → `chrome://extensions` → Developer mode → **Load unpacked** → select the unzipped folder
+            1. Download **`animeenigma-discord-presence-v${{ needs.build.outputs.version }}.zip`** from **Assets** below  
+               (do **not** use “Source code (zip)” — that is the full repo)
+            2. Unzip → open the folder **`animeenigma-discord-presence`**
+            3. Confirm you see `manifest.json` inside that folder
+            4. Chrome → `chrome://extensions` → Developer mode → **Load unpacked** → select **`animeenigma-discord-presence`**
 
             The local Discord bridge is still required for Rich Presence (see README).
           files: dist/animeenigma-discord-presence-v${{ needs.build.outputs.version }}.zip

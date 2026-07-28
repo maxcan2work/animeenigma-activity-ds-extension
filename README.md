@@ -33,14 +33,16 @@
 ### From a GitHub Release
 
 1. Open [Releases](https://github.com/maxcan2work/animeenigma-activity-ds-extension/releases)
-2. Download `animeenigma-discord-presence-v*.zip` and unzip it
-3. Chrome → `chrome://extensions` → enable **Developer mode** → **Load unpacked** → select the unzipped folder
-4. Keep reading [Quick start](#quick-start) to run the local bridge (required for Discord status)
+2. Under **Assets**, download **`animeenigma-discord-presence-v*.zip`**  
+   (not “Source code (zip)” — that archive is the whole repo and has no `manifest.json` at the root)
+3. Unzip it — you should get a folder `animeenigma-discord-presence/` that contains `manifest.json`
+4. Chrome → `chrome://extensions` → enable **Developer mode** → **Load unpacked** → select that **`animeenigma-discord-presence`** folder (the one with `manifest.json` inside)
+5. Keep reading [Quick start](#quick-start) to run the local bridge (required for Discord status)
 
 ### From source
 
 1. Clone this repo
-2. Load the `extension/` folder the same way (**Load unpacked**)
+2. Load the **`extension/`** folder (**Load unpacked**) — not the repo root
 3. Configure and start the bridge as in [Quick start](#quick-start)
 
 > The extension alone is not enough — Discord Rich Presence needs the local bridge next to Discord Desktop.
@@ -197,6 +199,19 @@ The bridge is **not** hosted in the cloud — it has to sit next to Discord on t
 ---
 
 ## FAQ
+
+<details>
+<summary><strong>Chrome says “manifest file is missing or unreadable”</strong></summary>
+
+<br>
+
+You almost certainly selected the wrong folder, or downloaded **Source code (zip)** instead of the release asset.
+
+- Release asset unzip → select **`animeenigma-discord-presence`** (must contain `manifest.json` next to `popup.html`)
+- From a git clone → select **`extension/`**, not the repository root
+- Do not select the parent `Downloads` folder or the `.zip` file itself
+
+</details>
 
 <details>
 <summary><strong>Why isn’t my status updating when I change episodes quickly?</strong></summary>
