@@ -1,15 +1,94 @@
 (() => {
   const HEARTBEAT_MS = 20_000
-  const DEBOUNCE_MS = 500
+  const DEBOUNCE_MS = 350
+  const NAV_DEBOUNCE_MS = 40
   const API_BASE = location.origin
+  const SESSION_START_KEY = 'ae-discord-session-start'
 
   let lastSent = ''
-  let startTimestamp = Date.now()
+  let lastIdentity = ''
+  let startTimestamp = readSessionStart()
   let debounceTimer = null
   let lastPayload = null
-  /** @type {Map<string, { name: string, fetchedAt: number }>} */
+  let locale = 'en'
+  let showProfileButton = false
+  /** @type {Map<string, { names: Record<string, string>, raw?: object, fetchedAt: number }>} */
   const animeCache = new Map()
 
+  async function refreshSettings() {
+    try {
+      const stored = await chrome.storage.sync.get({ locale: 'en', showProfileButton: false })
+      locale = globalThis.AeI18n.normalizeLocale(stored.locale)
+      showProfileButton = Boolean(stored.showProfileButton)
+    } catch {
+      locale = 'en'
+      showProfileButton = false
+    }
+  }
+
+  function t(key, vars) {
+    return globalThis.AeI18n.t(locale, key, vars)
+  }
+
+  /** Public profile URL for the logged-in AnimeEnigma user (`/user/{public_id}`). */
+  function resolveOwnProfileUrl() {
+    try {
+      const raw = localStorage.getItem('user')
+      if (!raw) return undefined
+      const user = JSON.parse(raw)
+      const id = user?.public_id || user?.publicId
+      if (!id || typeof id !== 'string') return undefined
+      return `${API_BASE}/user/${encodeURIComponent(id)}`
+    } catch {
+      return undefined
+    }
+  }
+
+  function withButtonFields(payload) {
+    const profileUrl = showProfileButton ? resolveOwnProfileUrl() : undefined
+    return {
+      ...payload,
+      showProfileButton: Boolean(showProfileButton && profileUrl),
+      profileUrl,
+    }
+  }
+  function readSessionStart() {
+    try {
+      const raw = sessionStorage.getItem(SESSION_START_KEY)
+      const n = raw ? Number(raw) : NaN
+      if (Number.isFinite(n) && n > 0) return n
+      const now = Date.now()
+      sessionStorage.setItem(SESSION_START_KEY, String(now))
+      return now
+    } catch {
+      return Date.now()
+    }
+  }
+
+  function ensureSessionStart() {
+    startTimestamp = readSessionStart()
+    return startTimestamp
+  }
+
+  /** Identity used only for logging / future hooks (timer is session-scoped). */
+  function activityIdentity(payload) {
+    let urlKey = ''
+    try {
+      const u = new URL(payload.url || location.href)
+      urlKey = u.pathname
+      if (/\/anime\//i.test(u.pathname)) {
+        const ep = u.searchParams.get('episode') || u.searchParams.get('ep') || ''
+        urlKey += `?ep=${ep}`
+      }
+    } catch {
+      urlKey = payload.url || ''
+    }
+    return JSON.stringify({
+      type: payload.type,
+      details: payload.details,
+      urlKey,
+    })
+  }
   function cleanTitle(raw) {
     return String(raw || '')
       .replace(/\s*[—|–|-]\s*AnimeEnigma\s*$/i, '')
@@ -36,9 +115,13 @@
       })
       if (!res.ok) return null
       const anime = unwrap(await res.json())
-      const name = anime?.name || anime?.name_ru || anime?.name_jp || anime?.title
-      if (!name) return null
-      const entry = { name: String(name), fetchedAt: Date.now() }
+      const names = {
+        en: anime?.name || anime?.title || '',
+        ru: anime?.name_ru || '',
+        ja: anime?.name_jp || '',
+      }
+      if (!names.en && !names.ru && !names.ja) return null
+      const entry = { names, raw: anime, fetchedAt: Date.now() }
       animeCache.set(id, entry)
       return entry
     } catch {
@@ -46,11 +129,21 @@
     }
   }
 
+  function titleFromMeta(meta) {
+    if (!meta) return null
+    return globalThis.AeI18n.animeTitle(locale, {
+      name: meta.names.en,
+      name_ru: meta.names.ru,
+      name_jp: meta.names.ja,
+      ...(meta.raw || {}),
+    })
+  }
+
   function animeTitleFromDom() {
     const h1 = document.querySelector('h1')
     if (h1) {
-      const t = text(h1)
-      if (t && t.length < 200) return t
+      const value = text(h1)
+      if (value && value.length < 200) return value
     }
     return cleanTitle(document.title)
   }
@@ -70,14 +163,14 @@
     if (animeMatch) {
       const animeId = decodeURIComponent(animeMatch[1])
       const meta = await fetchAnimeMeta(animeId)
-      const title = meta?.name || animeTitleFromDom() || 'Anime'
+      const title = titleFromMeta(meta) || animeTitleFromDom() || t('anime.fallback')
       const episode = q.get('episode') || q.get('ep')
       const playing = isVideoPlaying()
       const stateParts = []
-      if (episode) stateParts.push(`Episode ${episode}`)
-      if (playing) stateParts.push('On page · playing')
-      else if (document.querySelector('video')) stateParts.push('On page · paused')
-      else stateParts.push('Anime page')
+      if (episode) stateParts.push(t('page.episode', { n: episode }))
+      if (playing) stateParts.push(t('page.playing'))
+      else if (document.querySelector('video')) stateParts.push(t('page.paused'))
+      else stateParts.push(t('page.animePage'))
 
       return {
         type: 'watching',
@@ -85,6 +178,7 @@
         state: stateParts.join(' · '),
         url,
         largeImageText: title,
+        locale,
       }
     }
 
@@ -92,74 +186,79 @@
     if (gameMatch) {
       const roomId = gameMatch[1]
       return {
-        type: 'playing',
-        details: roomId ? 'Guess the opening' : 'Game lobby',
-        state: roomId ? `Room ${roomId.slice(0, 8)}…` : 'Browsing rooms',
+        type: 'competing',
+        details: roomId ? t('page.guessOp') : t('page.gameLobby'),
+        state: roomId ? t('state.guessOp') : t('state.gameLobby'),
         url,
-        largeImageText: 'AnimeEnigma Game',
+        locale,
       }
     }
 
     if (/^\/watch\/room\//i.test(path)) {
       return {
         type: 'watching',
-        details: 'Watch together',
-        state: 'Shared room',
+        details: t('page.watchTogether'),
+        state: t('state.watchTogether'),
         url,
+        locale,
       }
     }
 
     if (/^\/profile\/?$/i.test(path) || /^\/user\//i.test(path)) {
       return {
-        type: 'playing',
-        details: 'Viewing profile',
-        state: text(document.querySelector('h1')) || cleanTitle(document.title) || 'Profile',
+        type: 'watching',
+        details: t('page.profile'),
+        state: t('state.profile'),
         url,
+        locale,
       }
     }
 
     if (/^\/characters\//i.test(path)) {
       return {
-        type: 'playing',
-        details: 'Character page',
-        state: text(document.querySelector('h1')) || cleanTitle(document.title),
+        type: 'watching',
+        details: t('page.character'),
+        state: t('state.character'),
         url,
+        locale,
       }
     }
 
     const pageMap = [
-      [/^\/browse\/?$/i, 'Browsing catalog'],
-      [/^\/schedule\/?$/i, 'Checking schedule'],
-      [/^\/themes\/?$/i, 'Browsing themes (OP/ED)'],
-      [/^\/recs\/?$/i, 'Looking at recommendations'],
-      [/^\/following\/?$/i, 'Following feed'],
-      [/^\/anidle\/?$/i, 'Playing Anidle'],
-      [/^\/gacha/i, 'In gacha'],
-      [/^\/fanfics/i, 'Reading fanfics'],
-      [/^\/collections\//i, 'Browsing a collection'],
-      [/^\/downloads\/?$/i, 'Downloads'],
-      [/^\/about\/?$/i, 'About page'],
-      [/^\/auth\/?$/i, 'Logging in'],
-      [/^\/admin/i, 'Admin panel'],
-      [/^\/$/i, 'On the home page'],
+      [/^\/browse\/?$/i, 'watching', 'page.browse', 'state.browse'],
+      [/^\/schedule\/?$/i, 'watching', 'page.schedule', 'state.schedule'],
+      [/^\/themes\/?$/i, 'listening', 'page.themes', 'state.themes'],
+      [/^\/recs\/?$/i, 'watching', 'page.recs', 'state.recs'],
+      [/^\/following\/?$/i, 'watching', 'page.following', 'state.following'],
+      [/^\/anidle\/?$/i, 'competing', 'page.anidle', 'state.anidle'],
+      [/^\/gacha/i, 'competing', 'page.gacha', 'state.gacha'],
+      [/^\/fanfics/i, 'watching', 'page.fanfics', 'state.fanfics'],
+      [/^\/collections\//i, 'watching', 'page.collection', 'state.collection'],
+      [/^\/downloads\/?$/i, 'watching', 'page.downloads', 'state.downloads'],
+      [/^\/about\/?$/i, 'watching', 'page.about', 'state.about'],
+      [/^\/auth\/?$/i, 'watching', 'page.auth', 'state.auth'],
+      [/^\/admin/i, 'watching', 'page.admin', 'state.admin'],
+      [/^\/$/i, 'watching', 'page.home', 'state.home'],
     ]
 
-    for (const [re, details] of pageMap) {
+    for (const [re, type, detailsKey, stateKey] of pageMap) {
       if (re.test(path)) {
         return {
-          type: 'playing',
-          details,
-          state: 'AnimeEnigma',
+          type,
+          details: t(detailsKey),
+          state: t(stateKey),
           url,
+          locale,
         }
       }
     }
 
     return {
-      type: 'playing',
-      details: 'Browsing AnimeEnigma',
-      state: cleanTitle(document.title) || path,
+      type: 'watching',
+      details: t('page.browsing'),
+      state: t('state.browsing'),
       url,
+      locale,
     }
   }
 
@@ -169,77 +268,152 @@
       details: payload.details,
       state: payload.state,
       url: payload.url,
+      locale: payload.locale,
+      showProfileButton: Boolean(payload.showProfileButton),
+      profileUrl: payload.profileUrl || null,
     })
   }
 
-  function send(payload, { force = false } = {}) {
-    const fp = fingerprint(payload)
-    if (!force && fp === lastSent) {
-      lastPayload = { ...payload, startTimestamp }
-      chrome.runtime.sendMessage({ type: 'ae-activity', payload: lastPayload }, () => {
-        void chrome.runtime.lastError
+  function extensionAlive() {
+    try {
+      return Boolean(chrome.runtime?.id)
+    } catch {
+      return false
+    }
+  }
+
+  let stopped = false
+  let heartbeatTimer = null
+
+  function shutdown() {
+    if (stopped) return
+    stopped = true
+    clearTimeout(debounceTimer)
+    if (heartbeatTimer) clearInterval(heartbeatTimer)
+    try {
+      mo.disconnect()
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function post(payload) {
+    if (stopped || !extensionAlive()) {
+      shutdown()
+      return
+    }
+    try {
+      chrome.runtime.sendMessage({ type: 'ae-activity', payload }, () => {
+        const err = chrome.runtime.lastError?.message || ''
+        if (/context invalidated|extension context/i.test(err)) shutdown()
       })
+    } catch {
+      // Thrown synchronously when the extension was reloaded on this tab.
+      shutdown()
+    }
+  }
+
+  function send(payload, { heartbeat = false } = {}) {
+    if (stopped) return
+
+    const id = activityIdentity(payload)
+    const fp = fingerprint(payload)
+
+    // Keep one elapsed timer for the browsing session.
+    ensureSessionStart()
+    if (id !== lastIdentity) lastIdentity = id
+
+    // Heartbeats only refresh bridge TTL; Discord must not be rewritten.
+    if (heartbeat && fp === lastSent) {
+      lastPayload = { ...payload, startTimestamp }
+      post(lastPayload)
       return
     }
 
-    if (fp !== lastSent) {
-      startTimestamp = Date.now()
-      lastSent = fp
+    if (fp === lastSent) {
+      lastPayload = { ...payload, startTimestamp }
+      return
     }
 
+    lastSent = fp
     lastPayload = { ...payload, startTimestamp }
-    chrome.runtime.sendMessage({ type: 'ae-activity', payload: lastPayload }, () => {
-      void chrome.runtime.lastError
-    })
+    post(lastPayload)
   }
 
-  function tick() {
+  function tick(urgent = false) {
+    if (stopped) return
     clearTimeout(debounceTimer)
     debounceTimer = setTimeout(() => {
+      if (stopped) return
       detect()
-        .then((payload) => send(payload))
+        .then((payload) => send(withButtonFields(payload)))
         .catch(() => {})
-    }, DEBOUNCE_MS)
+    }, urgent ? NAV_DEBOUNCE_MS : DEBOUNCE_MS)
   }
 
   function clearPresence() {
+    if (stopped) return
     lastSent = ''
+    lastIdentity = ''
     lastPayload = null
-    chrome.runtime.sendMessage({ type: 'ae-activity', payload: { clear: true } }, () => {
-      void chrome.runtime.lastError
-    })
+    try {
+      sessionStorage.removeItem(SESSION_START_KEY)
+    } catch {
+      /* ignore */
+    }
+    post({ clear: true })
   }
 
   const wrap = (fnName) => {
     const orig = history[fnName]
     history[fnName] = function (...args) {
       const ret = orig.apply(this, args)
-      tick()
+      tick(true)
       return ret
     }
   }
   wrap('pushState')
   wrap('replaceState')
-  window.addEventListener('popstate', tick)
+  window.addEventListener('popstate', () => tick(true))
 
-  const mo = new MutationObserver(tick)
-  mo.observe(document.documentElement, {
-    childList: true,
-    subtree: true,
-    characterData: true,
-  })
+  // Light DOM watch — full subtree floods updates.
+  const mo = new MutationObserver(() => tick(false))
+  const observeRoot = () => {
+    const h1 = document.querySelector('h1')
+    if (h1) mo.observe(h1, { childList: true, characterData: true, subtree: true })
+    mo.observe(document.querySelector('title') || document.head, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+    })
+  }
+  observeRoot()
 
-  document.addEventListener('play', tick, true)
-  document.addEventListener('pause', tick, true)
+  document.addEventListener('play', () => tick(false), true)
+  document.addEventListener('pause', () => tick(false), true)
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') tick()
+    if (document.visibilityState === 'visible') tick(true)
   })
   window.addEventListener('beforeunload', clearPresence)
 
-  setInterval(() => {
-    if (lastPayload) send(lastPayload, { force: true })
-    else tick()
+  heartbeatTimer = setInterval(() => {
+    if (stopped) return
+    if (lastPayload) send(lastPayload, { heartbeat: true })
+    else tick(true)
   }, HEARTBEAT_MS)
 
-  tick()
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'sync') return
+    if (!changes.locale && !changes.showProfileButton) return
+    if (changes.locale) {
+      locale = globalThis.AeI18n.normalizeLocale(changes.locale.newValue)
+    }
+    if (changes.showProfileButton) {
+      showProfileButton = Boolean(changes.showProfileButton.newValue)
+    }
+    lastSent = ''
+    tick(true)
+  })
+
+  refreshSettings().finally(() => tick(true))
 })()

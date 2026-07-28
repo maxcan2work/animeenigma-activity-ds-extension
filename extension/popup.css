@@ -96,3 +96,25 @@ button {
 button:hover {
   filter: brightness(1.05);
 }
+
+.locale-toggle {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.locale-btn {
+  width: auto;
+  padding: 7px 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  font-weight: 600;
+}
+
+.locale-btn[aria-pressed='true'] {
+  background: rgba(34, 211, 238, 0.18);
+  color: var(--accent);
+  border-color: rgba(34, 211, 238, 0.45);
+}

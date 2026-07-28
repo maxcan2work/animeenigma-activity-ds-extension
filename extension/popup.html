@@ -8,21 +8,36 @@
   <body>
     <main>
       <h1>AnimeEnigma</h1>
-      <p class="sub">Discord Rich Presence</p>
+      <p id="subtitle" class="sub">Discord Rich Presence</p>
 
       <label class="row">
-        <span>Enabled</span>
+        <span id="labelEnabled">Enabled</span>
         <input id="enabled" type="checkbox" />
       </label>
 
+      <label class="row">
+        <span id="labelShowProfile">Profile button in activity</span>
+        <input id="showProfileButton" type="checkbox" />
+      </label>
+
       <label class="field">
-        <span>Bridge URL</span>
+        <span id="labelLocale">Activity language</span>
+        <div class="locale-toggle" role="radiogroup" aria-label="Locale">
+          <button type="button" class="locale-btn" data-locale="ru" aria-pressed="false">RU</button>
+          <button type="button" class="locale-btn" data-locale="en" aria-pressed="false">EN</button>
+          <button type="button" class="locale-btn" data-locale="ja" aria-pressed="false">JP</button>
+        </div>
+      </label>
+
+      <label class="field">
+        <span id="labelBridge">Bridge URL</span>
         <input id="bridgeUrl" type="text" spellcheck="false" />
       </label>
 
       <div id="status" class="status">Checking bridge…</div>
       <button id="save" type="button">Save</button>
     </main>
+    <script src="i18n.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

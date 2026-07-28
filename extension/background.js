@@ -1,6 +1,8 @@
 const DEFAULTS = {
   enabled: true,
+  showProfileButton: false,
   bridgeUrl: 'http://127.0.0.1:3847',
+  locale: 'en',
 }
 
 async function getSettings() {

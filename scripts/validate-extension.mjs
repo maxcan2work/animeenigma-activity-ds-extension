@@ -26,6 +26,7 @@ if (!Array.isArray(manifest.content_scripts) || !manifest.content_scripts.length
 const requiredFiles = [
   'background.js',
   'content.js',
+  'i18n.js',
   'popup.html',
   'popup.js',
   'popup.css',
