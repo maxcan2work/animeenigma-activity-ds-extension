@@ -1,108 +1,234 @@
 # AnimeEnigma → Discord Rich Presence
 
-Chrome extension + local bridge. Shows what you’re doing on [animeenigma.org](https://animeenigma.org) in your Discord status.
+<p align="center">
+  <img src="assets/logo.png" alt="AnimeEnigma" width="96" />
+</p>
 
-## What you need from Discord
+<p align="center">
+  <strong>Show what you’re doing on <a href="https://animeenigma.org">animeenigma.org</a> in your Discord profile</strong>
+</p>
 
-Only one value: **Application ID (Client ID)**.  
-No bot token. No user token. No OAuth client secret.
+<p align="center">
+  <a href="https://github.com/maxcan2work/animeenigma-activity-ds-extension/releases"><img alt="Release" src="https://img.shields.io/github/v/release/maxcan2work/animeenigma-activity-ds-extension?style=flat-square&color=3ec6c9" /></a>
+  <a href="https://github.com/maxcan2work/animeenigma-activity-ds-extension/actions"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/maxcan2work/animeenigma-activity-ds-extension/ci.yml?branch=main&style=flat-square&label=CI" /></a>
+  <img alt="Discord Desktop" src="https://img.shields.io/badge/Discord-Desktop%20required-5865F2?style=flat-square" />
+</p>
 
-### Steps
+**On this page**
 
-1. Open **[Discord Developer Portal](https://discord.com/developers/applications)** and sign in.
-2. **New Application** → name it e.g. `AnimeEnigma` (this name appears in the status line).
-3. Open the app → **General Information** → copy **Application ID**.
-4. (Optional) Left sidebar → **Rich Presence** → **Art Assets** → upload a logo. Remember the asset name (e.g. `logo`) for `DISCORD_LARGE_IMAGE_KEY`.
+- [Install](#install)
+- [Features](#features)
+- [Why a local bridge?](#why-a-local-bridge)
+- [Quick start](#quick-start)
+- [Environment](#environment)
+- [Requirements](#requirements)
+- [Develop / package](#develop--package)
+- [FAQ](#faq)
 
-Docs: [Setting Rich Presence](https://docs.discord.com/developers/discord-social-sdk/development-guides/setting-rich-presence) (RPC needs Discord Desktop).
+---
 
-## What you need from AnimeEnigma
+## Install
 
-Optional but recommended: **personal API key** (`ak_…`).
+### From a GitHub Release
 
-- Profile settings on the site → generate API key  
-- API reference: **[https://animeenigma.org/api-docs/](https://animeenigma.org/api-docs/)**  
-- Spec: [/openapi.json](https://animeenigma.org/openapi.json)
+1. Open [Releases](https://github.com/maxcan2work/animeenigma-activity-ds-extension/releases)
+2. Download `animeenigma-discord-presence-v*.zip` and unzip it
+3. Chrome → `chrome://extensions` → enable **Developer mode** → **Load unpacked** → select the unzipped folder
+4. Keep reading [Quick start](#quick-start) to run the local bridge (required for Discord status)
 
-Used by the bridge for:
+### From source
 
-- `GET /api/users/me/activity/current`
-- `GET /api/users/me/activity/stream` (SSE)
+1. Clone this repo
+2. Load the `extension/` folder the same way (**Load unpacked**)
+3. Configure and start the bridge as in [Quick start](#quick-start)
 
-That is the authoritative “watching right now” signal (title, episode, live flag).  
-Without the key, presence still works from the open tab (URL + DOM + public `GET /api/anime/{id}`).
+> The extension alone is not enough — Discord Rich Presence needs the local bridge next to Discord Desktop.
 
-## Setup
+---
+
+## Features
+
+| Feature | What it does |
+|---|---|
+| **Watching anime** | Shows the title and `Episode N of M` |
+| **Site pages** | Home, catalog, gacha, themes, profile, games, and more — with playful localized lines |
+| **Languages** | RU / EN / JP for status text and Discord buttons |
+| **Buttons for friends** | Open the site · Watch too · optional profile link |
+| **Focused tab only** | Multiple tabs or windows (including normal + incognito) don’t fight — last focused wins |
+| **Rate-limit aware** | Updates coalesce to Discord’s ~15s Rich Presence window |
+| **Optional API key** | Live “watching” from AnimeEnigma when you’re not on the player tab |
+| **Friendly popup** | Toggles, language switcher, autosave; bridge address hidden under **Advanced** |
+
+Example status:
+
+```text
+Watching AnimeEnigma
+Bocchi the Rock!
+Episode 7 of 12
+```
+
+```text
+Competing in AnimeEnigma
+In gacha
+Just one more pull…
+```
+
+---
+
+## Why a local bridge?
+
+Discord Rich Presence is **not** something a Chrome extension can set by itself.
+
+| Piece | Runs where | Job |
+|---|---|---|
+| **Extension** | Browser | Sees which AnimeEnigma page you’re on |
+| **Bridge** | Your PC (`127.0.0.1`) | Talks to **Discord Desktop** via IPC and sets the status |
+| **Discord Desktop** | Your PC | Shows *Watching / Competing* on your profile |
+
+```text
+  animeenigma.org tab  ──HTTP──►  local bridge :3847  ──IPC──►  Discord Desktop
+       (extension)                   (Node app)                    (Rich Presence)
+```
+
+Chrome cannot open Discord’s desktop IPC socket. The small companion on localhost exists because of that limitation — not because we enjoy ports.
+
+### About port `3847`
+
+- Default address: `http://127.0.0.1:3847`
+- Bound to **localhost only** (not exposed to the internet)
+- The extension talks to that URL; Discord never needs the port
+- Change it only if something else already uses `3847`: set `BRIDGE_PORT` in `.env`, restart the bridge, then open the extension popup → **Advanced** → paste the new address
+
+Most people never open Advanced.
+
+---
+
+## Quick start
+
+### 1. Discord Application ID
+
+1. Open the [Developer Portal](https://discord.com/developers/applications) → **New Application** (name it `AnimeEnigma` — that string appears in the status).
+2. Copy **Application ID** (Client ID).
+3. Optional: **Rich Presence → Art Assets** → upload [`assets/discord/logo.png`](assets/discord/logo.png) as asset name `logo`.
+
+No bot token. No user token. No OAuth secret.
+
+### 2. Configure and run the bridge
 
 ```bash
+git clone https://github.com/maxcan2work/animeenigma-activity-ds-extension.git
 cd animeenigma-activity-ds-extension
 cp .env.example .env
-# edit .env → DISCORD_CLIENT_ID=... and ANIMEENIGMA_API_KEY=ak_...
+# put DISCORD_CLIENT_ID=... into .env
 
 cd bridge
 npm install
 npm start
 ```
 
-Leave **Discord Desktop** running.
+Keep **Discord Desktop** open while the bridge runs.
 
-### Discord Rich Presence image (optional but nice)
+<details>
+<summary><strong>Optional: AnimeEnigma API key</strong></summary>
 
-1. Open [Discord Developer Portal](https://discord.com/developers/applications) → your app  
-2. **Rich Presence → Art Assets** → upload `assets/discord/logo.png`  
-3. Name the asset exactly `logo` (matches `DISCORD_LARGE_IMAGE_KEY` in `.env`)
+<br>
 
-Source art lives in `assets/` (`logo.png` full mark, `logo-mark.png` letter-A crop). Extension toolbar icons are under `extension/icons/`.
+In your site profile, create a personal API key (`ak_…`) and set `ANIMEENIGMA_API_KEY` in `.env`.
 
-### Load the extension (Chrome / Edge / Brave)
+Used for:
 
-1. `chrome://extensions` → Developer mode → **Load unpacked**
-2. Select the `extension/` folder
-3. Open animeenigma.org — popup should show bridge health
+- `GET /api/users/me/activity/current`
+- `GET /api/users/me/activity/stream` (SSE)
 
-## How priority works
+Docs: [api-docs](https://animeenigma.org/api-docs/) · [openapi.json](https://animeenigma.org/openapi.json)
 
-1. **API watching** (`state: watching`) → Discord “Watching …” with anime + episode  
-2. Else **current tab** (catalog, game, profile, anime page, …)  
-3. Else clear presence (no tab heartbeat / idle)
+Without the key, presence still works from the open tab (URL + public anime metadata).
 
-## `.env` fields
+</details>
 
-| Variable | Required | Where from |
+### 3. Confirm the extension
+
+Open the popup on any AnimeEnigma tab — you should see **Connected**.
+
+Settings (language, profile button, enable/disable) **autosave** a couple of seconds after you change them.
+
+---
+
+## Environment
+
+| Variable | Required | Meaning |
 |---|---|---|
 | `DISCORD_CLIENT_ID` | yes | Developer Portal → Application ID |
-| `ANIMEENIGMA_API_KEY` | recommended | Site profile → API key (`ak_…`) |
-| `BRIDGE_PORT` | no | default `3847` |
-| `DISCORD_LARGE_IMAGE_KEY` | no | Art asset name |
-| `ANIMEENIGMA_API_BASE` | no | default `https://animeenigma.org` |
+| `ANIMEENIGMA_API_KEY` | recommended | Profile → `ak_…` |
+| `BRIDGE_PORT` | no | Default `3847` — only if that port is taken |
+| `DISCORD_LARGE_IMAGE_KEY` | no | Art asset name (default `logo`) |
+| `ANIMEENIGMA_API_BASE` | no | Default `https://animeenigma.org` |
+
+Copy from [`.env.example`](.env.example). **Never commit `.env`.**
+
+---
 
 ## Requirements
 
-- Discord **Desktop** (not only browser)
-- Node.js 18+
-- Bridge process running locally
+- Discord **Desktop** (browser-only Discord cannot host Rich Presence IPC)
+- Node.js **18+** for the bridge
+- A Chromium browser (Chrome / Edge / Brave / …) for the extension
 
-## CI / GitHub Releases
+---
 
-GitHub Actions (free for this public repo) runs on every `main` push / PR:
-
-1. **Test** — bridge unit tests + extension validation  
-2. **Build** — `dist/animeenigma-discord-presence.zip` artifact  
-3. **Release** (push to `main` only) — creates a GitHub Release `v1.0.<run_number>` with the zip attached  
-
-No Chrome Web Store account needed. Users install via Developer mode (Load unpacked).
-
-The **bridge is not deployed** anywhere: Discord Rich Presence must run on the user’s machine next to Discord Desktop.
-
-### Install from a Release
-
-1. Open [Releases](https://github.com/maxcan2work/animeenigma-activity-ds-extension/releases)
-2. Download `animeenigma-discord-presence-v*.zip` and unzip
-3. Chrome → `chrome://extensions` → Developer mode → **Load unpacked** → select the folder
-
-### Local package
+## Develop / package
 
 ```bash
-npm test
-npm run build   # → dist/animeenigma-discord-presence.zip
+npm test                          # bridge unit tests + extension validate
+npm run build                     # → dist/animeenigma-discord-presence.zip
 ```
+
+CI on `main`: test → zip → [GitHub Release](https://github.com/maxcan2work/animeenigma-activity-ds-extension/releases).
+
+The bridge is **not** hosted in the cloud — it has to sit next to Discord on the user’s machine.
+
+---
+
+## FAQ
+
+<details>
+<summary><strong>Why isn’t my status updating when I change episodes quickly?</strong></summary>
+
+<br>
+
+Discord accepts Rich Presence updates roughly **once every 15 seconds**. The bridge queues the latest episode and flushes when the window opens — wait a moment and the newest number appears.
+
+</details>
+
+<details>
+<summary><strong>Can friends see the buttons?</strong></summary>
+
+<br>
+
+Yes — Discord shows activity buttons to **other people**, not on your own profile card. Labels follow your language setting (for example “Watch too”, “Open profile”).
+
+</details>
+
+<details>
+<summary><strong>Two windows or incognito?</strong></summary>
+
+<br>
+
+Presence follows the **last focused** AnimeEnigma tab. Background tabs don’t overwrite it. Normal and incognito share the same local bridge, which picks a single leader by focus time.
+
+</details>
+
+<details>
+<summary><strong>Will there be a one-click companion app?</strong></summary>
+
+<br>
+
+That’s the plan — package the bridge so end users don’t need `npm start`. Until then, the Node bridge is the supported companion.
+
+</details>
+
+---
+
+<p align="center">
+  Built for <a href="https://animeenigma.org">AnimeEnigma</a> · Presence powered by Discord Desktop RPC
+</p>
