@@ -1,0 +1,11 @@
+node_modules/
+bridge/node_modules/
+dist/
+.DS_Store
+.idea/
+*.log
+
+# secrets — commit only .env.example
+.env
+.env.*
+!.env.example
