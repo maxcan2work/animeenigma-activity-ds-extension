@@ -44,6 +44,11 @@ let pageLeader = { id: null, focusedAt: 0 }
 
 let lastFingerprint = ''
 let lastDiscordSetAt = 0
+/** Newest activity waiting for Discord's ~15s SET_ACTIVITY window. */
+let pendingActivity = null
+let pendingFingerprint = null
+let pendingSource = null
+let flushTimer = null
 let pageStaleTimer = null
 let reconcileTimer = null
 let rpcRetryTimer = null
@@ -161,6 +166,9 @@ function buildDiscordActivity(payload) {
   return Object.fromEntries(Object.entries(activity).filter(([, v]) => v !== undefined))
 }
 
+/** Discord silently drops Rich Presence updates faster than ~1 / 15s. */
+const DISCORD_SET_MIN_MS = 15_000
+
 async function setDiscordActivity(activity) {
   try {
     await rpc.request('SET_ACTIVITY', { pid: process.pid, activity })
@@ -174,15 +182,68 @@ async function setDiscordActivity(activity) {
   }
 }
 
+function scheduleFlush(ms) {
+  clearTimeout(flushTimer)
+  flushTimer = setTimeout(() => {
+    flushPendingPresence().catch((err) => console.error('[bridge] flush error:', err.message))
+  }, Math.max(0, ms))
+}
+
+function clearPendingPresence() {
+  pendingActivity = null
+  pendingFingerprint = null
+  pendingSource = null
+  clearTimeout(flushTimer)
+  flushTimer = null
+}
+
+async function flushPendingPresence() {
+  if (!rpcReady || !pendingActivity) return { ok: true, skipped: true }
+
+  const now = Date.now()
+  const wait = lastDiscordSetAt ? DISCORD_SET_MIN_MS - (now - lastDiscordSetAt) : 0
+  if (wait > 0) {
+    scheduleFlush(wait + 25)
+    return { ok: true, deferred: true, waitMs: wait }
+  }
+
+  const activity = pendingActivity
+  const fingerprint = pendingFingerprint
+  const source = pendingSource
+  clearPendingPresence()
+
+  lastFingerprint = fingerprint
+  lastDiscordSetAt = Date.now()
+  try {
+    await setDiscordActivity(activity)
+  } catch (err) {
+    // Re-queue so a transient IPC failure still lands the latest episode.
+    pendingActivity = activity
+    pendingFingerprint = fingerprint
+    pendingSource = source
+    lastFingerprint = ''
+    lastDiscordSetAt = Date.now()
+    scheduleFlush(DISCORD_SET_MIN_MS)
+    throw err
+  }
+
+  console.log(
+    `[bridge] presence ← ${source || '?'}: type=${activity.type} | ${activity.details}${activity.state ? ` / ${activity.state}` : ''} | since=${activity.timestamps?.start}`,
+  )
+  return { ok: true, source, activity }
+}
+
 async function applyPresence({ force = false } = {}) {
   if (!rpcReady) return { ok: false, error: 'Discord RPC not connected' }
 
   const resolved = withStickyStart(resolvePresence(apiActivity, pageContext, API_BASE))
   if (!resolved) {
+    clearPendingPresence()
     if (lastFingerprint) {
       lastFingerprint = ''
       discordClockStart = null
       await rpc.clearActivity()
+      lastDiscordSetAt = Date.now()
       console.log('[bridge] presence cleared')
     }
     return { ok: true, cleared: true }
@@ -198,27 +259,33 @@ async function applyPresence({ force = false } = {}) {
   })
   const fingerprint = stablePresenceFingerprint(resolved, activity)
 
-  // Never re-SET an identical payload — Discord freezes the elapsed timer when
-  // SET_ACTIVITY is repeated with the same activity (tab switches / heartbeats).
-  // `force` only bypasses the rate limit for *changed* presence (nav / reconnect).
-  if (fingerprint === lastFingerprint) {
+  // Already showing this (and nothing newer queued).
+  if (fingerprint === lastFingerprint && !pendingFingerprint) {
     return { ok: true, skipped: true, source: resolved.source }
   }
-
-  const now = Date.now()
-  const minGap = force ? 200 : 450
-  if (now - lastDiscordSetAt < minGap) {
-    scheduleReconcile(minGap + 50, force)
+  // Newest pending already matches — just wait for the flush window.
+  if (fingerprint === pendingFingerprint) {
     return { ok: true, deferred: true, source: resolved.source }
   }
 
-  lastFingerprint = fingerprint
-  lastDiscordSetAt = now
-  await setDiscordActivity(activity)
-  console.log(
-    `[bridge] presence ← ${resolved.source}: type=${activity.type} | ${resolved.details}${resolved.state ? ` / ${resolved.state}` : ''} | since=${activity.timestamps?.start}`,
-  )
-  return { ok: true, source: resolved.source, activity }
+  // Coalesce: keep only the latest desired activity for Discord's 15s window.
+  pendingActivity = activity
+  pendingFingerprint = fingerprint
+  pendingSource = resolved.source
+
+  const now = Date.now()
+  const wait = lastDiscordSetAt ? DISCORD_SET_MIN_MS - (now - lastDiscordSetAt) : 0
+  // `force` is for reconnect/clear recovery — still respect Discord's window
+  // unless we have never successfully SET yet.
+  if (wait > 0 && lastDiscordSetAt > 0) {
+    scheduleFlush(wait + 25)
+    console.log(
+      `[bridge] presence queued (${resolved.source}): ${resolved.details}${resolved.state ? ` / ${resolved.state}` : ''} — flush in ${Math.ceil(wait / 1000)}s`,
+    )
+    return { ok: true, deferred: true, waitMs: wait, source: resolved.source }
+  }
+
+  return flushPendingPresence()
 }
 
 function scheduleReconcile(ms = 50, force = false) {
@@ -386,7 +453,7 @@ const server = http.createServer(async (req, res) => {
         console.log('[bridge] page context stale')
       }, 15 * 60_000)
 
-      const result = await applyPresence()
+      const result = await applyPresence({ force: true })
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify(result))
     } catch (err) {
@@ -408,6 +475,8 @@ function attachRpcHandlers(client) {
     // Force re-SET after Discord restart; otherwise we skip as "unchanged"
     // and the client shows no activity / a frozen clock.
     lastFingerprint = ''
+    lastDiscordSetAt = 0
+    clearPendingPresence()
     console.log(`[bridge] Discord RPC ready (app ${CLIENT_ID})`)
     scheduleReconcile(50, true)
   })
@@ -416,6 +485,7 @@ function attachRpcHandlers(client) {
     if (!rpcReady && !rpcConnecting) return
     rpcReady = false
     lastFingerprint = ''
+    clearPendingPresence()
     console.warn('[bridge] Discord RPC disconnected — will retry')
     scheduleRpcReconnect(2000)
   })
