@@ -3,6 +3,14 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import dotenv from 'dotenv'
 import DiscordRPC from 'discord-rpc'
+import {
+  ACTIVITY_TYPE,
+  isAnimeEnigmaUrl,
+  parseSseChunk,
+  presenceFromApi,
+  resolvePresence,
+  unwrapEnvelope,
+} from './lib/activity.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 dotenv.config({ path: path.resolve(__dirname, '../../.env') })
@@ -32,12 +40,7 @@ let apiActivity = null
 let lastFingerprint = ''
 let pageStaleTimer = null
 let reconcileTimer = null
-
-const ACTIVITY_TYPE = {
-  playing: 0,
-  watching: 3,
-  competing: 5,
-}
+let rpcRetryTimer = null
 
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -61,45 +64,6 @@ function readJson(req) {
   })
 }
 
-function animeTitle(anime) {
-  if (!anime) return 'Anime'
-  return anime.name || anime.name_ru || anime.name_jp || anime.title || 'Anime'
-}
-
-function formatWatchState(snap) {
-  const parts = []
-  if (snap.episode_number != null) parts.push(`Episode ${snap.episode_number}`)
-  if (snap.position_seconds != null && snap.duration_seconds) {
-    const pos = Math.max(0, Math.floor(snap.position_seconds))
-    const dur = Math.max(1, Math.floor(snap.duration_seconds))
-    const pct = Math.min(99, Math.floor((pos / dur) * 100))
-    parts.push(`${pct}%`)
-  }
-  return parts.join(' · ') || 'Watching'
-}
-
-function presenceFromApi(snap) {
-  if (!snap || snap.state !== 'watching' || !snap.is_live) return null
-  const title = animeTitle(snap.anime)
-  const animeId = snap.anime?.id
-  return {
-    type: 'watching',
-    details: title,
-    state: formatWatchState(snap),
-    url: animeId ? `${API_BASE}/anime/${animeId}` : API_BASE,
-    largeImageText: title,
-    startTimestamp: snap.updated_at ? Date.parse(snap.updated_at) || Date.now() : Date.now(),
-    source: 'api',
-  }
-}
-
-function resolvePresence() {
-  const fromApi = presenceFromApi(apiActivity)
-  if (fromApi) return fromApi
-  if (pageContext) return pageContext
-  return null
-}
-
 function buildDiscordActivity(payload) {
   const typeKey = String(payload.type || 'playing').toLowerCase()
   const start = payload.startTimestamp || Date.now()
@@ -119,7 +83,7 @@ function buildDiscordActivity(payload) {
     }
   }
 
-  if (payload.url && /^https:\/\/([a-z0-9-]+\.)?animeenigma\.org([/:?]|$)/i.test(payload.url)) {
+  if (isAnimeEnigmaUrl(payload.url)) {
     activity.buttons = [{ label: 'Open on AnimeEnigma', url: payload.url }]
   }
 
@@ -127,11 +91,9 @@ function buildDiscordActivity(payload) {
 }
 
 async function setDiscordActivity(activity) {
-  // Use raw SET_ACTIVITY so Activity Type (Watching / Playing) is preserved.
   try {
     await rpc.request('SET_ACTIVITY', { pid: process.pid, activity })
   } catch (err) {
-    // Buttons can fail on unverified apps — retry without them.
     if (activity.buttons) {
       const { buttons: _b, ...rest } = activity
       await rpc.request('SET_ACTIVITY', { pid: process.pid, activity: rest })
@@ -144,7 +106,7 @@ async function setDiscordActivity(activity) {
 async function applyPresence() {
   if (!rpcReady) return { ok: false, error: 'Discord RPC not connected' }
 
-  const resolved = resolvePresence()
+  const resolved = resolvePresence(apiActivity, pageContext, API_BASE)
   if (!resolved) {
     if (lastFingerprint) {
       lastFingerprint = ''
@@ -182,11 +144,6 @@ function scheduleReconcile(ms = 50) {
   }, ms)
 }
 
-function unwrapEnvelope(json) {
-  if (json && typeof json === 'object' && 'data' in json) return json.data
-  return json
-}
-
 async function fetchCurrentActivity() {
   if (!API_KEY) return null
   const res = await fetch(`${API_BASE}/api/users/me/activity/current`, {
@@ -199,28 +156,6 @@ async function fetchCurrentActivity() {
     throw new Error(`activity/current HTTP ${res.status}`)
   }
   return unwrapEnvelope(await res.json())
-}
-
-function parseSseChunk(buffer, onEvent) {
-  const parts = buffer.split('\n\n')
-  const rest = parts.pop() ?? ''
-  for (const block of parts) {
-    let event = 'message'
-    const dataLines = []
-    for (const line of block.split('\n')) {
-      if (line.startsWith(':')) continue
-      if (line.startsWith('event:')) event = line.slice(6).trim()
-      else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim())
-    }
-    if (!dataLines.length) continue
-    const raw = dataLines.join('\n')
-    try {
-      onEvent(event, JSON.parse(raw))
-    } catch {
-      /* ignore malformed frames */
-    }
-  }
-  return rest
 }
 
 async function runActivityStream() {
@@ -246,7 +181,6 @@ async function runActivityStream() {
       backoff = 1000
       console.log('[bridge] activity SSE connected')
 
-      // Seed from snapshot once connected
       try {
         apiActivity = await fetchCurrentActivity()
         scheduleReconcile()
@@ -275,7 +209,6 @@ async function runActivityStream() {
       await new Promise((r) => setTimeout(r, backoff))
       backoff = Math.min(backoff * 2, 30_000)
 
-      // Poll while reconnecting
       try {
         apiActivity = await fetchCurrentActivity()
         scheduleReconcile()
@@ -286,7 +219,6 @@ async function runActivityStream() {
   }
 }
 
-// Fallback poll if SSE is flaky (also useful without long-lived streams)
 async function pollActivityLoop() {
   if (!API_KEY) return
   for (;;) {
@@ -318,7 +250,7 @@ const server = http.createServer(async (req, res) => {
         ok: true,
         discord: rpcReady,
         apiKey: Boolean(API_KEY),
-        apiWatching: Boolean(presenceFromApi(apiActivity)),
+        apiWatching: Boolean(presenceFromApi(apiActivity, API_BASE)),
         hasPageContext: Boolean(pageContext),
       }),
     )
@@ -406,7 +338,6 @@ async function connectRpc() {
   }
 }
 
-let rpcRetryTimer = null
 function scheduleRpcReconnect(ms) {
   clearTimeout(rpcRetryTimer)
   rpcRetryTimer = setTimeout(() => {
