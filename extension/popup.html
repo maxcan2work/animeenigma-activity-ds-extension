@@ -7,35 +7,50 @@
   </head>
   <body>
     <main>
-      <h1>AnimeEnigma</h1>
-      <p id="subtitle" class="sub">Discord Rich Presence</p>
+      <header class="hero">
+        <h1>AnimeEnigma</h1>
+        <p id="subtitle" class="sub">Discord Rich Presence</p>
+      </header>
 
-      <label class="row">
-        <span id="labelEnabled">Enabled</span>
-        <input id="enabled" type="checkbox" />
-      </label>
+      <section class="card">
+        <label class="row">
+          <span id="labelEnabled">Enabled</span>
+          <span class="switch">
+            <input id="enabled" type="checkbox" role="switch" />
+            <span class="switch-ui" aria-hidden="true"></span>
+          </span>
+        </label>
 
-      <label class="row">
-        <span id="labelShowProfile">Profile button in activity</span>
-        <input id="showProfileButton" type="checkbox" />
-      </label>
+        <label class="row">
+          <span id="labelShowProfile">Profile button in activity</span>
+          <span class="switch">
+            <input id="showProfileButton" type="checkbox" role="switch" />
+            <span class="switch-ui" aria-hidden="true"></span>
+          </span>
+        </label>
 
-      <label class="field">
-        <span id="labelLocale">Activity language</span>
-        <div class="locale-toggle" role="radiogroup" aria-label="Locale">
-          <button type="button" class="locale-btn" data-locale="ru" aria-pressed="false">RU</button>
-          <button type="button" class="locale-btn" data-locale="en" aria-pressed="false">EN</button>
-          <button type="button" class="locale-btn" data-locale="ja" aria-pressed="false">JP</button>
+        <div class="field">
+          <span id="labelLocale" class="field-label">Activity language</span>
+          <div class="locale-toggle" role="radiogroup" aria-labelledby="labelLocale">
+            <button type="button" class="locale-btn" data-locale="ru" aria-pressed="false">RU</button>
+            <button type="button" class="locale-btn" data-locale="en" aria-pressed="false">EN</button>
+            <button type="button" class="locale-btn" data-locale="ja" aria-pressed="false">JP</button>
+          </div>
         </div>
-      </label>
+      </section>
 
-      <label class="field">
-        <span id="labelBridge">Bridge URL</span>
-        <input id="bridgeUrl" type="text" spellcheck="false" />
-      </label>
+      <div id="status" class="status" role="status">Checking…</div>
 
-      <div id="status" class="status">Checking bridge…</div>
-      <button id="save" type="button">Save</button>
+      <details class="advanced">
+        <summary id="labelAdvanced">Advanced</summary>
+        <label class="field bridge-field">
+          <span id="labelBridge" class="field-label">Local bridge address</span>
+          <input id="bridgeUrl" type="text" spellcheck="false" autocomplete="off" placeholder="http://127.0.0.1:3847" />
+        </label>
+        <p id="bridgeHint" class="hint">Only change this if the companion app uses another port.</p>
+      </details>
+
+      <p id="saveHint" class="save-hint" hidden></p>
     </main>
     <script src="i18n.js"></script>
     <script src="popup.js"></script>
