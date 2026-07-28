@@ -73,3 +73,28 @@ Leave **Discord Desktop** running.
 - Discord **Desktop** (not only browser)
 - Node.js 18+
 - Bridge process running locally
+
+## CI / GitHub Releases
+
+GitHub Actions (free for this public repo) runs on every `main` push / PR:
+
+1. **Test** — bridge unit tests + extension validation  
+2. **Build** — `dist/animeenigma-discord-presence.zip` artifact  
+3. **Release** (push to `main` only) — creates a GitHub Release `v1.0.<run_number>` with the zip attached  
+
+No Chrome Web Store account needed. Users install via Developer mode (Load unpacked).
+
+The **bridge is not deployed** anywhere: Discord Rich Presence must run on the user’s machine next to Discord Desktop.
+
+### Install from a Release
+
+1. Open [Releases](https://github.com/maxcan2work/animeenigma-activity-ds-extension/releases)
+2. Download `animeenigma-discord-presence-v*.zip` and unzip
+3. Chrome → `chrome://extensions` → Developer mode → **Load unpacked** → select the folder
+
+### Local package
+
+```bash
+npm test
+npm run build   # → dist/animeenigma-discord-presence.zip
+```

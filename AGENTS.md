@@ -63,6 +63,16 @@ After every non-trivial code change, run a short self-review before finishing:
 ## Useful paths
 
 - Bridge entry: `bridge/src/index.js`
+- Bridge helpers (tested): `bridge/src/lib/activity.js`
 - Extension content script: `extension/content.js`
 - Extension SW: `extension/background.js`
 - Manifest MV3: `extension/manifest.json`
+- CI workflow: `.github/workflows/ci.yml`
+
+## CI / deploy
+
+- CI runs on GitHub Actions (cloud) for `main` PRs/pushes — no load on the owner’s laptop.
+- Jobs: test → build zip → (push to `main`) GitHub Release with the extension zip attached (`v1.0.<run_number>`).
+- Do **not** wire Chrome Web Store publishing unless the owner explicitly asks later (paid developer account).
+- **Do not** try to host the Discord RPC bridge in the cloud for end-user Rich Presence; it must be local.
+- Releases use the default `GITHUB_TOKEN` — no extra secrets required for zip distribution.

@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: bridge/package-lock.json
+
+      - name: Install bridge deps
+        run: npm ci
+        working-directory: bridge
+
+      - name: Run tests + extension validation
+        run: npm test
+
+  build:
+    name: Build extension zip
+    runs-on: ubuntu-latest
+    needs: test
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            VERSION="1.0.${{ github.run_number }}"
+          else
+            VERSION="$(node -p "require('./extension/manifest.json').version")"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Using extension version $VERSION"
+
+      - name: Package extension
+        env:
+          EXTENSION_VERSION: ${{ steps.version.outputs.version }}
+        run: npm run build
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: animeenigma-discord-presence
+          path: dist/animeenigma-discord-presence.zip
+          if-no-files-found: error
+
+  release:
+    name: GitHub Release
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: animeenigma-discord-presence
+          path: dist
+
+      - name: Rename zip with version
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          mv dist/animeenigma-discord-presence.zip \
+            "dist/animeenigma-discord-presence-v${VERSION}.zip"
+          ls -la dist/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.build.outputs.version }}
+          name: Extension v${{ needs.build.outputs.version }}
+          body: |
+            Chrome extension build from `main` (`${{ github.sha }}`).
+
+            ### Install
+            1. Download `animeenigma-discord-presence-v${{ needs.build.outputs.version }}.zip`
+            2. Unzip it
+            3. Chrome → `chrome://extensions` → Developer mode → **Load unpacked** → select the unzipped folder
+
+            The local Discord bridge is still required for Rich Presence (see README).
+          files: dist/animeenigma-discord-presence-v${{ needs.build.outputs.version }}.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
