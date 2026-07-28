@@ -39,7 +39,12 @@ API docs: https://animeenigma.org/api-docs/
 ## Git & GitHub (owner rules)
 
 - Commit subjects **must** start with `feat:`, `fix:`, or `refactor:` (Conventional Commits style).
-- **Do not** invent/propose commit messages and **do not** push unless the user explicitly asks in the current message.
+- **Never commit or push on your own.** When the user asks to commit / split commits / push:
+  1. Inspect changes (`git status`, `git diff`, recent log style).
+  2. **Propose** the commit plan: one or more subjects (`feat:` / `fix:` / `refactor:`) and which files/hunks each covers. Keep proposals short.
+  3. **Wait** for the user to confirm, edit a title, or suggest a different split.
+  4. Only after explicit confirmation (e.g. «ок», «да», «пушь», or a revised title they approve) — create the commit(s) and **push** to the tracked remote.
+- If the user only confirms the message but says not to push, commit locally and skip push.
 - Never commit `.env` or secrets. Prefer `git status` / `git check-ignore` before staging.
 - Do not amend commits unless the user asks and amend safety rules are met.
 - Do not force-push `main`/`master`.
