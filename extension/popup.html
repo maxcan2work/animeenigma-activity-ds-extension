@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>AnimeEnigma Presence</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main>
+      <h1>AnimeEnigma</h1>
+      <p class="sub">Discord Rich Presence</p>
+
+      <label class="row">
+        <span>Enabled</span>
+        <input id="enabled" type="checkbox" />
+      </label>
+
+      <label class="field">
+        <span>Bridge URL</span>
+        <input id="bridgeUrl" type="text" spellcheck="false" />
+      </label>
+
+      <div id="status" class="status">Checking bridge…</div>
+      <button id="save" type="button">Save</button>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

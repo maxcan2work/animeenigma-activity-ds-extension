@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "AnimeEnigma Discord Presence",
+  "version": "1.0.0",
+  "description": "Shows your AnimeEnigma activity as Discord Rich Presence via a local bridge.",
+  "permissions": ["storage", "alarms"],
+  "host_permissions": [
+    "https://animeenigma.org/*",
+    "https://*.animeenigma.org/*",
+    "http://127.0.0.1:3847/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "AnimeEnigma Discord Presence",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://animeenigma.org/*",
+        "https://*.animeenigma.org/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
